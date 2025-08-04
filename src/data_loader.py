@@ -279,3 +279,29 @@ class PrefectureCitySelector:
                 st.sidebar.markdown("---")
                 st.sidebar.header("📊 現在のデータ")
                 st.sidebar.write("✅ データ読み込み済み")
+
+    def run(self):
+        """アプリケーションを実行"""
+        # サイドバーでページ選択
+        st.sidebar.title("🏛️ ナビゲーション")
+
+        pages = {
+            "🎯 メイン": MainPage,
+            "🗺️ 小字抽出": KozuPage,  # 新しいページを追加
+            "📊 データ管理": DataManagementPage,
+            "ℹ️ 情報": AboutPage
+        }
+
+        selected_page = st.sidebar.selectbox("ページを選択", list(pages.keys()))
+
+        # 選択されたページを表示
+        try:
+            page_class = pages[selected_page]
+            page = page_class(self)
+            page.render()
+        except Exception as e:
+            st.error(f"ページ表示エラー: {str(e)}")
+            st.info("メインページに戻ってください")
+
+        # サイドバー情報表示
+        self._render_sidebar_info()
