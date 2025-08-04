@@ -12,6 +12,13 @@ Original file is located at
 """
 
 import streamlit as st
+import sys
+from pathlib import Path
+
+# プロジェクトルート
+project_root = Path(__file__).resolve().parent.parent  # 2階層上
+sys.path.insert(0, str(project_root))
+
 
 class PrefectureSelector:
     def render(self):
