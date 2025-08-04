@@ -77,10 +77,14 @@ class PrefectureCitySelectorWeb:
             progress_bar.progress(75)
             status_text.text("データを処理しています...")
             
-            # データを整理
+            # データを整理（団体コードと共に保存）
             prefecture_data = {}
+            prefecture_codes = {}  # 都道府県の団体コードを保存
+            city_codes = {}  # 市区町村の団体コードを保存
+            
             prefecture_cols = [col for col in df.columns if '都道府県' in col and '漢字' in col]
             city_cols = [col for col in df.columns if '市区町村' in col and '漢字' in col]
+            code_col = '団体コード'
             
             if not prefecture_cols or not city_cols:
                 st.error(f"適切な列が見つかりません。利用可能な列: {list(df.columns)}")
@@ -92,20 +96,54 @@ class PrefectureCitySelectorWeb:
             for _, row in df.iterrows():
                 prefecture = row.get(prefecture_col)
                 city = row.get(city_col)
+                code = row.get(code_col, '')
                 
                 if pd.notna(prefecture):
                     if prefecture not in prefecture_data:
-                        prefecture_data[prefecture] = set()
+                        prefecture_data[prefecture] = {}
+                        # 都道府県コードを保存（最初の2桁）
+                        if pd.notna(code):
+                            prefecture_codes[prefecture] = str(code)[:2]
                     
                     if pd.notna(city):
-                        prefecture_data[prefecture].add(city)
+                        # 市区町村とそのコードを保存
+                        if pd.notna(code):
+                            prefecture_data[prefecture][city] = str(code)
+                        else:
+                            prefecture_data[prefecture][city] = '999999'  # コードがない場合のデフォルト
             
-            # SetをListに変換してソート
+            # 都道府県を団体コード順にソート（沖縄県を最初に）
+            def sort_prefectures(prefectures_dict):
+                # 沖縄県を特別扱い
+                sorted_prefs = []
+                other_prefs = []
+                
+                for pref in prefectures_dict.keys():
+                    if pref == '沖縄県':
+                        sorted_prefs.insert(0, pref)  # 最初に挿入
+                    else:
+                        other_prefs.append(pref)
+                
+                # 沖縄県以外を団体コード順にソート
+                other_prefs.sort(key=lambda x: prefecture_codes.get(x, '99'))
+                
+                return sorted_prefs + other_prefs
+            
+            # 市区町村を団体コード順にソート
             for prefecture in prefecture_data:
-                prefecture_data[prefecture] = sorted(list(prefecture_data[prefecture]))
+                cities_with_codes = prefecture_data[prefecture]
+                sorted_cities = sorted(cities_with_codes.keys(), 
+                                     key=lambda x: cities_with_codes[x])
+                prefecture_data[prefecture] = sorted_cities
+            
+            # ソート済みデータで辞書を再構築
+            sorted_prefecture_data = {}
+            sorted_prefectures = sort_prefectures(prefecture_data)
+            for prefecture in sorted_prefectures:
+                sorted_prefecture_data[prefecture] = prefecture_data[prefecture]
             
             # セッション状態を更新
-            st.session_state.prefecture_data = prefecture_data
+            st.session_state.prefecture_data = sorted_prefecture_data
             st.session_state.data_loaded = True
             st.session_state.current_url = url
             
@@ -113,8 +151,8 @@ class PrefectureCitySelectorWeb:
             status_text.text("✅ データの読み込みが完了しました！")
             
             # 統計情報を表示
-            total_prefectures = len(prefecture_data)
-            total_cities = sum(len(cities) for cities in prefecture_data.values())
+            total_prefectures = len(sorted_prefecture_data)
+            total_cities = sum(len(cities) for cities in sorted_prefecture_data.values())
             
             st.success(f"📊 読み込み完了: {total_prefectures}都道府県, {total_cities}市区町村")
             
@@ -178,7 +216,8 @@ class PrefectureCitySelectorWeb:
             col1, col2 = st.columns(2)
             
             with col1:
-                prefectures = sorted(st.session_state.prefecture_data.keys())
+                # 都道府県は既にソート済み（沖縄県が最初、その後団体コード順）
+                prefectures = list(st.session_state.prefecture_data.keys())
                 prefecture_options = [f"{p} ({len(st.session_state.prefecture_data[p])}市区町村)" 
                                     for p in prefectures]
                 
@@ -194,6 +233,7 @@ class PrefectureCitySelectorWeb:
             
             with col2:
                 if st.session_state.selected_prefecture:
+                    # 市区町村は既に団体コード順でソート済み
                     cities = st.session_state.prefecture_data[st.session_state.selected_prefecture]
                     
                     selected_city = st.selectbox(
