@@ -1096,11 +1096,29 @@ class PrefectureCitySelectorGitHub:
 def main():
     """メイン関数"""
     try:
-        app = PrefectureCitySelectorGitHub()
+        app = PrefectureCitySelectorGIS()
         app.run()
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
-    main()
+    main()選択オプションを作成
+                                    file_options = ["選択してください"]
+                                    file_mapping = {}
+                                    
+                                    # 個別ファイル
+                                    for f in files:
+                                        base_name = os.path.basename(f)
+                                        file_options.append(f"📄 {base_name}")
+                                        file_mapping[f"📄 {base_name}"] = f
+                                    
+                                    # Shapefileセット
+                                    for base_name, file_list in shapefile_sets.items():
+                                        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
+                                        file_options.append(set_name)
+                                        # Shapefileセットの場合は.shpファイルを代表として選択
+                                        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
+                                        file_mapping[set_name] = shp_file
+                                    
+                                    # ファイル
