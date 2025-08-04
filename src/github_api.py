@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 
 import requests
 import streamlit as st
-from config.config import GITHUB_CONFIG
+from config.settings import GITHUB_CONFIG
 
 
 class GitHubAPI:
