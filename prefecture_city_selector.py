@@ -5,7 +5,7 @@
 GitHub ExcelファイルからデータをダウンロードしてWebアプリケーションを作成
 
 必要なライブラリ:
-pip install streamlit pandas openpyxl requests plotly
+pip install streamlit pandas openpyxl requests
 
 実行方法:
 streamlit run prefecture_city_selector_streamlit.py
@@ -15,11 +15,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from io import BytesIO
-import json
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
-import base64
 
 # ページ設定
 st.set_page_config(
@@ -132,35 +128,9 @@ class PrefectureCitySelectorWeb:
             return False
     
     def create_download_link(self, data, filename, file_type="json"):
-        """ダウンロードリンクを作成"""
-        if file_type == "json":
-            # メタデータを追加
-            save_data = {
-                "metadata": {
-                    "version": "4.0",
-                    "created_at": datetime.now().isoformat(),
-                    "source_url": st.session_state.current_url,
-                    "total_prefectures": len(data),
-                    "total_cities": sum(len(cities) for cities in data.values())
-                },
-                "data": data
-            }
-            content = json.dumps(save_data, ensure_ascii=False, indent=2)
-            mime_type = "application/json"
-        
-        elif file_type == "csv":
-            rows = []
-            for prefecture, cities in data.items():
-                for city in cities:
-                    rows.append([prefecture, city, f"{prefecture}{city}"])
-            
-            df = pd.DataFrame(rows, columns=['都道府県', '市区町村', '完全住所'])
-            content = df.to_csv(index=False, encoding='utf-8-sig')
-            mime_type = "text/csv"
-        
-        b64 = base64.b64encode(content.encode('utf-8-sig')).decode()
-        href = f'<a href="data:{mime_type};base64,{b64}" download="{filename}">📥 {filename}をダウンロード</a>'
-        return href
+        """ダウンロードリンクを作成（現在は使用しない）"""
+        # この機能は削除されました
+        pass
     
     def render_main_page(self):
         """メインページを描画"""
@@ -179,7 +149,7 @@ class PrefectureCitySelectorWeb:
         # データ読み込みセクション
         st.header("📡 データソース設定")
         
-        default_url = "https://raw.githubusercontent.com/kentashimoji/kozu-pick/main/000925835.xlsx"
+        default_url = "https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/000925835.xlsx"
         url = st.text_input(
             "GitHub ExcelファイルURL:",
             value=st.session_state.current_url or default_url,
@@ -274,89 +244,28 @@ class PrefectureCitySelectorWeb:
             st.warning("データが読み込まれていません。メインページでデータを読み込んでください。")
             return
         
-        # データ統計
-        st.header("📈 データ統計")
+        # 現在のデータ状態のみ表示
+        st.header("ℹ️ 現在の状態")
         
-        total_prefectures = len(st.session_state.prefecture_data)
-        total_cities = sum(len(cities) for cities in st.session_state.prefecture_data.values())
-        avg_cities = total_cities / total_prefectures if total_prefectures > 0 else 0
+        st.success("✅ データが正常に読み込まれています")
         
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("都道府県数", total_prefectures)
-        with col2:
-            st.metric("総市区町村数", total_cities)
-        with col3:
-            st.metric("平均市区町村数", f"{avg_cities:.1f}")
-        with col4:
-            st.metric("データソース", "GitHub" if st.session_state.current_url else "未設定")
+        if st.session_state.current_url:
+            st.info(f"📡 データソース: {st.session_state.current_url}")
         
-        # データ可視化
-        st.header("📊 データ可視化")
+        # データクリア機能のみ
+        st.header("🗑️ データ管理")
         
-        # 都道府県別市区町村数の棒グラフ
-        prefecture_counts = {p: len(cities) for p, cities in st.session_state.prefecture_data.items()}
-        df_counts = pd.DataFrame(list(prefecture_counts.items()), columns=['都道府県', '市区町村数'])
-        df_counts = df_counts.sort_values('市区町村数', ascending=False)
-        
-        fig = px.bar(df_counts, x='都道府県', y='市区町村数', 
-                     title='都道府県別市区町村数',
-                     color='市区町村数',
-                     color_continuous_scale='viridis')
-        fig.update_layout(xaxis_tickangle=-45, height=500)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # 上位10都道府県
-        st.subheader("📋 市区町村数ランキング（上位10）")
-        top10 = df_counts.head(10)
-        
-        for i, (_, row) in enumerate(top10.iterrows(), 1):
-            col1, col2, col3 = st.columns([1, 3, 1])
-            with col1:
-                st.write(f"**{i}位**")
-            with col2:
-                st.write(f"{row['都道府県']}")
-            with col3:
-                st.write(f"{row['市区町村数']}市区町村")
-        
-        # データダウンロード
-        st.header("💾 データダウンロード")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📄 JSON形式でダウンロード"):
-                filename = f"prefecture_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                download_link = self.create_download_link(
-                    st.session_state.prefecture_data, filename, "json"
-                )
-                st.markdown(download_link, unsafe_allow_html=True)
-        
-        with col2:
-            if st.button("📊 CSV形式でダウンロード"):
-                filename = f"prefecture_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                download_link = self.create_download_link(
-                    st.session_state.prefecture_data, filename, "csv"
-                )
-                st.markdown(download_link, unsafe_allow_html=True)
-        
-        # 詳細データ表示
-        st.header("🔍 詳細データ")
-        
-        if st.checkbox("全データを表示"):
-            all_data = []
-            for prefecture, cities in st.session_state.prefecture_data.items():
-                for city in cities:
-                    all_data.append({
-                        '都道府県': prefecture,
-                        '市区町村': city,
-                        '完全住所': f"{prefecture}{city}"
-                    })
-            
-            df_all = pd.DataFrame(all_data)
-            st.dataframe(df_all, use_container_width=True)
-            
-            st.info(f"総件数: {len(df_all)}件")
+        if st.button("🗑️ 読み込まれたデータをクリア", type="secondary"):
+            if st.session_state.data_loaded:
+                st.session_state.prefecture_data = {}
+                st.session_state.data_loaded = False
+                st.session_state.current_url = ""
+                st.session_state.selected_prefecture = ""
+                st.session_state.selected_city = ""
+                st.success("データをクリアしました")
+                st.experimental_rerun()
+            else:
+                st.warning("クリアするデータがありません")
     
     def render_about_page(self):
         """情報ページを描画"""
@@ -372,14 +281,13 @@ class PrefectureCitySelectorWeb:
         ### 主な機能
         ✅ **GitHub対応**: GitHub上のExcelファイルの直接読み込み  
         ✅ **階層選択**: 都道府県選択による市区町村の絞り込み  
-        ✅ **データ可視化**: 統計情報とグラフ表示  
-        ✅ **データエクスポート**: JSON/CSV形式での保存  
-        ✅ **レスポンシブ**: モバイル・デスクトップ対応  
         ✅ **リアルタイム**: 選択結果の即時表示  
+        ✅ **レスポンシブ**: モバイル・デスクトップ対応  
+        ✅ **シンプル**: 必要最小限の機能に特化  
         
         ### 必要なライブラリ
         ```bash
-        pip install streamlit pandas openpyxl requests plotly
+        pip install streamlit pandas openpyxl requests
         ```
         
         ### 実行方法
@@ -402,7 +310,7 @@ class PrefectureCitySelectorWeb:
         - ファイルサイズが大きい場合は読み込みに時間がかかります
         
         ### 更新履歴
-        - **v4.0**: Streamlit対応、データ可視化機能追加
+        - **v4.0**: Streamlit対応、シンプル設計に特化
         - **v3.0**: GitHub対応、エラーハンドリング強化  
         - **v2.0**: GUI改善、保存機能追加  
         - **v1.0**: 初期バージョン  
@@ -446,12 +354,11 @@ class PrefectureCitySelectorWeb:
         # 選択されたページを表示
         pages[selected_page]()
         
-        # サイドバーに統計情報表示
+        # サイドバーに基本情報のみ表示
         if st.session_state.data_loaded and st.session_state.prefecture_data:
             st.sidebar.markdown("---")
             st.sidebar.header("📊 現在のデータ")
-            st.sidebar.write(f"都道府県数: {len(st.session_state.prefecture_data)}")
-            st.sidebar.write(f"市区町村数: {sum(len(cities) for cities in st.session_state.prefecture_data.values())}")
+            st.sidebar.write("✅ データ読み込み済み")
             
             if st.session_state.selected_prefecture:
                 st.sidebar.write(f"選択中: {st.session_state.selected_prefecture}")
