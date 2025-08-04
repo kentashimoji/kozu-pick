@@ -5,15 +5,17 @@ GIS処理機能
 """
 import sys
 from pathlib import Path
+
+
+project_root = Path(__file__).resolve().parent.parent  # 2階層上
+sys.path.insert(0, str(project_root))
+
+
 import os
 import zipfile
 import tempfile
 import streamlit as st
 from config.settings import GIS_CONFIG
-
-
-project_root = Path(__file__).resolve().parent.parent  # 2階層上
-sys.path.insert(0, str(project_root))
 
 
 try:
