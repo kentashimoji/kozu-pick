@@ -3,10 +3,6 @@
 """
 GitHub API処理
 """
-
-import requests
-import streamlit as st
-from config.settings import GITHUB_CONFIG
 import sys
 from pathlib import Path
 
@@ -14,6 +10,11 @@ from pathlib import Path
 # プロジェクトルート
 project_root = Path(__file__).resolve().parent.parent  # 2階層上
 sys.path.insert(0, str(project_root))
+
+
+import requests
+import streamlit as st
+from config.settings import GITHUB_CONFIG
 
 
 class GitHubAPI:
