@@ -1,32 +1,34 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-都道府県・市区町村選択ツール v33.0 (Streamlit Cloud対応版)
-メインアプリケーション
+都道府県・市区町村選択ツール + 小字データ抽出 v33.0
 """
+
 import sys
 from pathlib import Path
 
-# プロジェクトルート
+# プロジェクトルート設定
 project_root = Path(__file__).resolve().parent
-sys.path.insert(0, str(project_root))
-
-
-import streamlit as st
-from src.data_loader import PrefectureCitySelector
-from config.config import APP_CONFIG
-
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# これで正常にインポート
-    try:
-        from config.config import APP_CONFIG
-        from src.data_loader import PrefectureCitySelector
-    except ImportError as e:
-        st.error(f"インポートエラー: {e}")
-        st.stop()
+import streamlit as st
 
+# 安全なインポート
+try:
+    from config.settings import APP_CONFIG
+    from src.data_loader import PrefectureCitySelector
+    IMPORTS_SUCCESS = True
+except ImportError as e:
+    st.error(f"インポートエラー: {e}")
+    IMPORTS_SUCCESS = False
+    
+    # フォールバック設定
+    APP_CONFIG = {
+        "title": "都道府県・市区町村選択ツール + 小字抽出 v33.0",
+        "icon": "🏛️",
+        "layout": "wide",
+        "sidebar_state": "expanded"
+    }
 
 # ページ設定
 st.set_page_config(
@@ -37,7 +39,7 @@ st.set_page_config(
 )
 
 def main():
-    """メイン関数"""
+    """メインアプリケーション"""
     if not IMPORTS_SUCCESS:
         st.title("⚠️ アプリケーション初期化エラー")
         st.error("必要なモジュールをインポートできませんでした。")
