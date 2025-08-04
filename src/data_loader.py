@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 
+# プロジェクトルートをPythonパスに追加
+project_root = Path(__file__).resolve().parent.parent  # 2階層上
+sys.path.insert(0, str(project_root))
+
+
 import sys
 from pathlib import Path
 import streamlit as st
@@ -14,12 +19,6 @@ from src.utils import SessionStateManager
 from pages.main_page import MainPage
 from pages.data_management import DataManagementPage
 from pages.about_page import AboutPage
-
-
-# プロジェクトルートをPythonパスに追加
-project_root = Path(__file__).resolve().parent.parent  # 2階層上
-sys.path.insert(0, str(project_root))
-
 
 class PrefectureCitySelector:
     def __init__(self):
