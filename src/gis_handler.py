@@ -15,7 +15,7 @@ import os
 import zipfile
 import tempfile
 import streamlit as st
-from config.config import GIS_CONFIG
+from config.settings import GIS_CONFIG
 from src.kozu_extractor import KozuWebExtractor
 
 try:
