@@ -15,7 +15,7 @@ import streamlit as st
 
 # 安全なインポート
 try:
-    from config.config import APP_CONFIG
+    from config.settings import APP_CONFIG
     from src.data_loader import PrefectureCitySelector
     IMPORTS_SUCCESS = True
 except ImportError as e:
