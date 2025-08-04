@@ -11,10 +11,6 @@ from src.data_loader import PrefectureCitySelector
 from config.settings import APP_CONFIG
 
 
-# プロジェクトルートをPythonパスに追加
-project_root = Path(__file__).resolve().parent.parent  # 2階層上
-sys.path.insert(0, str(project_root))
-
 # パス設定
 current_file = Path(__file__).resolve()
 project_root = current_file.parent
