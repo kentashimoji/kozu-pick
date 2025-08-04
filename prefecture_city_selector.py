@@ -1096,7 +1096,7 @@ class PrefectureCitySelectorGitHub:
 def main():
     """メイン関数"""
     try:
-        app = PrefectureCitySelectorGIS()
+        app = PrefectureCitySelectorGitHub()
         app.run()
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
