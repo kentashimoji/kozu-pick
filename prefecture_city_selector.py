@@ -1,7 +1,227 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+都道府県・市区町村選択ツール v33.0 (GIS対応版)
+GitHub ExcelファイルからデータをダウンロードしてWebアプリケーションを作成
+GISファイル（ZIP、Shapefile、KML）から大字・丁目データを抽出
+
+必要なライブラリ:
+pip install streamlit pandas openpyxl requests geopandas fiona lxml
+
+実行方法:
+streamlit run prefecture_city_selector_streamlit.py
+"""
+
+import streamlit as st
+import pandas as pd
+import requests
+from io import BytesIO
+from datetime import datetime
+import os
+import glob
+import zipfile
+import tempfile
+import re
+import shutil
+
+# GIS関連ライブラリのインポート
+try:
+    import geopandas as gpd
+    import fiona
+    GEOPANDAS_AVAILABLE = True
+except ImportError:
+    GEOPANDAS_AVAILABLE = False
+    st.warning("⚠️ GeoPandasが利用できません。GISファイルの読み込みにはGeoPandasのインストールが必要です。")
+
+try:
+    from lxml import etree
+    XML_AVAILABLE = True
+except ImportError:
+    XML_AVAILABLE = False
+
+# ページ設定
+st.set_page_config(
+    page_title="都道府県・市区町村選択ツール v33.0",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+class PrefectureCitySelectorGIS:
+    def __init__(self):
+        self.init_session_state()
+    
+    def init_session_state(self):
+        """セッション状態を初期化"""
+        if 'prefecture_data' not in st.session_state:
+            st.session_state.prefecture_data = {}
+        if 'prefecture_codes' not in st.session_state:
+            st.session_state.prefecture_codes = {}
+        if 'city_codes' not in st.session_state:
+            st.session_state.city_codes = {}
+        if 'data_loaded' not in st.session_state:
+            st.session_state.data_loaded = False
+        if 'current_url' not in st.session_state:
+            st.session_state.current_url = ""
+        if 'selected_prefecture' not in st.session_state:
+            st.session_state.selected_prefecture = ""
+        if 'selected_city' not in st.session_state:
+            st.session_state.selected_city = ""
+        if 'selected_file_path' not in st.session_state:
+            st.session_state.selected_file_path = ""
+        if 'area_data' not in st.session_state:
+            st.session_state.area_data = {}
+        if 'selected_oaza' not in st.session_state:
+            st.session_state.selected_oaza = ""
+        if 'selected_chome' not in st.session_state:
+            st.session_state.selected_chome = ""
+        if 'folder_path' not in st.session_state:
+            st.session_state.folder_path = ""
+    
+    def load_data_from_github(self, url):
+        """GitHubからデータを読み込み"""
+        try:
+            if not url:
+                st.error("URLを入力してください")
+                return False
+                
+            if "raw.githubusercontent.com" not in url:
+                st.warning("GitHub Raw URLではないようです。正しいURLは 'raw.githubusercontent.com' を含んでいます。")
+            
+            # プログレスバーを表示
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # データをダウンロード
+            status_text.text("データをダウンロードしています...")
+            progress_bar.progress(25)
+            
+            headers = {'User-Agent': 'PrefectureCitySelector/33.0'}
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            progress_bar.progress(50)
+            status_text.text("ファイルを解析しています...")
+            
+            # ファイル形式を判定して読み込み
+            if url.lower().endswith('.csv'):
+                df = pd.read_csv(BytesIO(response.content), encoding='utf-8-sig')
+            else:
+                excel_data = BytesIO(response.content)
+                df = pd.read_excel(excel_data)
+            
+            progress_bar.progress(75)
+            status_text.text("データを処理しています...")
+            
+            # データを整理（団体コードと共に保存）
+            prefecture_data = {}
+            prefecture_codes = {}
+            city_codes = {}
+            
+            prefecture_cols = [col for col in df.columns if '都道府県' in col and '漢字' in col]
+            city_cols = [col for col in df.columns if '市区町村' in col and '漢字' in col]
+            code_col = '団体コード'
+            
+            if not prefecture_cols or not city_cols:
+                st.error(f"適切な列が見つかりません。利用可能な列: {list(df.columns)}")
+                return False
+            
+            prefecture_col = prefecture_cols[0]
+            city_col = city_cols[0]
+            
+            for _, row in df.iterrows():
+                prefecture = row.get(prefecture_col)
+                city = row.get(city_col)
+                code = row.get(code_col, '')
+                
+                if pd.notna(prefecture):
+                    if prefecture not in prefecture_data:
+                        prefecture_data[prefecture] = {}
+                        # 都道府県コードを保存（最初の2桁）
+                        if pd.notna(code):
+                            prefecture_codes[prefecture] = str(code)[:2]
+                    
+                    if pd.notna(city):
+                        # 市区町村の詳細情報を保存
+                        full_code = str(code) if pd.notna(code) else '999999'
+                        prefecture_code = full_code[:2]  # 1-2桁目
+                        city_code = full_code[2:5] if len(full_code) >= 5 else '999'  # 3-5桁目
+                        
+                        prefecture_data[prefecture][city] = {
+                            'full_code': full_code,
+                            'city_code': city_code
+                        }
+                        
+                        # 全体のコード情報を保存
+                        city_codes[f"{prefecture}_{city}"] = {
+                            'prefecture_code': prefecture_code,
+                            'city_code': city_code,
+                            'full_code': full_code
+                        }
+            
+            # 都道府県を団体コード順にソート（沖縄県を最初に）
+            def sort_prefectures(prefectures_dict):
+                # 沖縄県を特別扱い
+                sorted_prefs = []
+                other_prefs = []
+                
+                for pref in prefectures_dict.keys():
+                    if pref == '沖縄県':
+                        sorted_prefs.insert(0, pref)  # 最初に挿入
+                    else:
+                        other_prefs.append(pref)
+                
+                # 沖縄県以外を団体コード順にソート
+                other_prefs.sort(key=lambda x: prefecture_codes.get(x, '99'))
+                
+                return sorted_prefs + other_prefs
+            
+            # 市区町村を団体コード順にソート
+            for prefecture in prefecture_data:
+                cities_with_info = prefecture_data[prefecture]
+                sorted_cities = sorted(cities_with_info.keys(), 
+                                     key=lambda x: cities_with_info[x]['full_code'])
+                # ソート済みの市区町村辞書を作成
+                sorted_cities_dict = {}
+                for city in sorted_cities:
+                    sorted_cities_dict[city] = cities_with_info[city]
+                prefecture_data[prefecture] = sorted_cities_dict
+            
+            # ソート済みデータで辞書を再構築
+            sorted_prefecture_data = {}
+            sorted_prefectures = sort_prefectures(prefecture_data)
+            for prefecture in sorted_prefectures:
+                sorted_prefecture_data[prefecture] = prefecture_data[prefecture]
+            
+            # セッション状態にコード情報も保存
+            st.session_state.prefecture_data = sorted_prefecture_data
+            st.session_state.prefecture_codes = prefecture_codes
+            st.session_state.city_codes = city_codes
+            st.session_state.data_loaded = True
+            st.session_state.current_url = url
+            
+            progress_bar.progress(100)
+            status_text.text("✅ データの読み込みが完了しました！")
+            
+            # 統計情報を表示
+            total_prefectures = len(sorted_prefecture_data)
+            total_cities = sum(len(cities) for cities in sorted_prefecture_data.values())
+            
+            st.success(f"📊 読み込み完了: {total_prefectures}都道府県, {total_cities}市区町村")
+            
+            return True
+            
+        except requests.RequestException as e:
+            st.error(f"ネットワークエラー: {str(e)}")
+            return False
+        except Exception as e:
+            st.error(f"データの読み込みに失敗しました: {str(e)}")
+            return False
+    
     def find_files_by_code(self, folder_path, prefecture_code, city_code):
         """団体コードに基づいてGISファイルを検索"""
         if not folder_path or not os.path.exists(folder_path):
-            return []
+            return [], {}
         
         # 検索パターンを作成
         search_code = f"{prefecture_code}{city_code}"
@@ -64,7 +284,7 @@
         """選択されたGISファイルから大字・丁目データを読み込み"""
         try:
             if not GEOPANDAS_AVAILABLE:
-                st.error("GeoPandasがインストールされていません。GISファイルの読み込みにはgeoPandasが必要です。")
+                st.error("GeoPandasがインストールされていません。GISファイルの読み込みにはGeoPandasが必要です。")
                 return False
             
             if not file_path or not os.path.exists(file_path):
@@ -127,7 +347,6 @@
             finally:
                 # 一時ディレクトリをクリーンアップ
                 if temp_dir and os.path.exists(temp_dir):
-                    import shutil
                     shutil.rmtree(temp_dir, ignore_errors=True)
             
         except Exception as e:
@@ -136,8 +355,6 @@
     
     def extract_area_from_gis(self, gdf):
         """GISデータから大字・丁目を抽出"""
-        import re
-        
         # 可能性のある列名パターン
         oaza_patterns = ['大字', 'おおあざ', 'オオアザ', 'OAZA', 'oaza', '字', '町名', 'TOWN', 'town']
         chome_patterns = ['丁目', 'ちょうめ', 'チョウメ', 'CHOME', 'chome', '丁', '番地']
@@ -228,235 +445,19 @@
         for oaza in area_data:
             area_data[oaza] = sorted(list(area_data[oaza]))
         
-        return area_data        if 'selected_file_path' not in st.session_state:
-            st.session_state.selected_file_path = ""
-        if 'area_data' not in st.session_state:
-            st.session_state.area_data = {}
-        if 'selected_oaza' not in st.session_state:
-            st.session_state.selected_oaza = ""
-        if 'selected_chome' not in st.session_state:
-            st.session_state.selected_chome = ""
-        if 'folder_path' not in st.session_state:
-            st.session_state.folder_path = ""        if 'prefecture_codes' not in st.session_state:
-            st.session_state.prefecture_codes = {}
-        if 'city_codes' not in st.session_state:
-            st.session_state.city_codes = {}#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-都道府県・市区町村選択ツール v4.0 (Streamlit版)
-GitHub ExcelファイルからデータをダウンロードしてWebアプリケーションを作成
-
-必要なライブラリ:
-pip install streamlit pandas openpyxl requests
-
-実行方法:
-streamlit run prefecture_city_selector_streamlit.py
-"""
-
-import streamlit as st
-import pandas as pd
-import requests
-from io import BytesIO
-from datetime import datetime
-import os
-import glob
-import zipfile
-import tempfile
-try:
-    import geopandas as gpd
-    import fiona
-    GEOPANDAS_AVAILABLE = True
-except ImportError:
-    GEOPANDAS_AVAILABLE = False
-    st.warning("⚠️ GeoPandasが利用できません。GISファイルの読み込みにはgeoPandasのインストールが必要です。")
-
-try:
-    from lxml import etree
-    XML_AVAILABLE = True
-except ImportError:
-    XML_AVAILABLE = False
-
-# ページ設定
-st.set_page_config(
-    page_title="都道府県・市区町村選択ツール v4.0",
-    page_icon="🏛️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-class PrefectureCitySelectorWeb:
-    def __init__(self):
-        self.init_session_state()
-    
-    def init_session_state(self):
-        """セッション状態を初期化"""
-        if 'prefecture_data' not in st.session_state:
-            st.session_state.prefecture_data = {}
-        if 'data_loaded' not in st.session_state:
-            st.session_state.data_loaded = False
-        if 'current_url' not in st.session_state:
-            st.session_state.current_url = ""
-        if 'selected_prefecture' not in st.session_state:
-            st.session_state.selected_prefecture = ""
-        if 'selected_city' not in st.session_state:
-            st.session_state.selected_city = ""
-    
-    def load_data_from_github(self, url):
-        """GitHubからデータを読み込み"""
-        try:
-            if not url:
-                st.error("URLを入力してください")
-                return False
-                
-            if "raw.githubusercontent.com" not in url:
-                st.warning("GitHub Raw URLではないようです。正しいURLは 'raw.githubusercontent.com' を含んでいます。")
-            
-            # プログレスバーを表示
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            # データをダウンロード
-            status_text.text("データをダウンロードしています...")
-            progress_bar.progress(25)
-            
-            headers = {'User-Agent': 'PrefectureCitySelector/4.0'}
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            progress_bar.progress(50)
-            status_text.text("ファイルを解析しています...")
-            
-            # ファイル形式を判定して読み込み
-            if url.lower().endswith('.csv'):
-                df = pd.read_csv(BytesIO(response.content), encoding='utf-8-sig')
-            else:
-                excel_data = BytesIO(response.content)
-                df = pd.read_excel(excel_data)
-            
-            progress_bar.progress(75)
-            status_text.text("データを処理しています...")
-            
-            # データを整理（団体コードと共に保存）
-            prefecture_data = {}
-            prefecture_codes = {}  # 都道府県の団体コードを保存
-            city_codes = {}  # 市区町村の詳細情報を保存
-            
-            prefecture_cols = [col for col in df.columns if '都道府県' in col and '漢字' in col]
-            city_cols = [col for col in df.columns if '市区町村' in col and '漢字' in col]
-            code_col = '団体コード'
-            
-            if not prefecture_cols or not city_cols:
-                st.error(f"適切な列が見つかりません。利用可能な列: {list(df.columns)}")
-                return False
-            
-            prefecture_col = prefecture_cols[0]
-            city_col = city_cols[0]
-            
-            for _, row in df.iterrows():
-                prefecture = row.get(prefecture_col)
-                city = row.get(city_col)
-                code = row.get(code_col, '')
-                
-                if pd.notna(prefecture):
-                    if prefecture not in prefecture_data:
-                        prefecture_data[prefecture] = {}
-                        # 都道府県コードを保存（最初の2桁）
-                        if pd.notna(code):
-                            prefecture_codes[prefecture] = str(code)[:2]
-                    
-                    if pd.notna(city):
-                        # 市区町村の詳細情報を保存
-                        full_code = str(code) if pd.notna(code) else '999999'
-                        prefecture_code = full_code[:2]  # 1-2桁目
-                        city_code = full_code[2:5] if len(full_code) >= 5 else '999'  # 3-5桁目
-                        
-                        prefecture_data[prefecture][city] = {
-                            'full_code': full_code,
-                            'city_code': city_code
-                        }
-                        
-                        # 全体のコード情報を保存
-                        city_codes[f"{prefecture}_{city}"] = {
-                            'prefecture_code': prefecture_code,
-                            'city_code': city_code,
-                            'full_code': full_code
-                        }
-            
-            # 都道府県を団体コード順にソート（沖縄県を最初に）
-            def sort_prefectures(prefectures_dict):
-                # 沖縄県を特別扱い
-                sorted_prefs = []
-                other_prefs = []
-                
-                for pref in prefectures_dict.keys():
-                    if pref == '沖縄県':
-                        sorted_prefs.insert(0, pref)  # 最初に挿入
-                    else:
-                        other_prefs.append(pref)
-                
-                # 沖縄県以外を団体コード順にソート
-                other_prefs.sort(key=lambda x: prefecture_codes.get(x, '99'))
-                
-                return sorted_prefs + other_prefs
-            
-            # 市区町村を団体コード順にソート
-            for prefecture in prefecture_data:
-                cities_with_info = prefecture_data[prefecture]
-                sorted_cities = sorted(cities_with_info.keys(), 
-                                     key=lambda x: cities_with_info[x]['full_code'])
-                # ソート済みの市区町村リストを作成
-                sorted_cities_dict = {}
-                for city in sorted_cities:
-                    sorted_cities_dict[city] = cities_with_info[city]
-                prefecture_data[prefecture] = sorted_cities_dict
-            
-            # ソート済みデータで辞書を再構築
-            sorted_prefecture_data = {}
-            sorted_prefectures = sort_prefectures(prefecture_data)
-            for prefecture in sorted_prefectures:
-                sorted_prefecture_data[prefecture] = prefecture_data[prefecture]
-            
-            # セッション状態にコード情報も保存
-            st.session_state.prefecture_data = sorted_prefecture_data
-            st.session_state.prefecture_codes = prefecture_codes
-            st.session_state.city_codes = city_codes
-            st.session_state.data_loaded = True
-            st.session_state.current_url = url
-            
-            progress_bar.progress(100)
-            status_text.text("✅ データの読み込みが完了しました！")
-            
-            # 統計情報を表示
-            total_prefectures = len(sorted_prefecture_data)
-            total_cities = sum(len(cities) for cities in sorted_prefecture_data.values())
-            
-            st.success(f"📊 読み込み完了: {total_prefectures}都道府県, {total_cities}市区町村")
-            
-            return True
-            
-        except requests.RequestException as e:
-            st.error(f"ネットワークエラー: {str(e)}")
-            return False
-        except Exception as e:
-            st.error(f"データの読み込みに失敗しました: {str(e)}")
-            return False
-    
-    def create_download_link(self, data, filename, file_type="json"):
-        """ダウンロードリンクを作成（現在は使用しない）"""
-        # この機能は削除されました
-        pass
+        return area_data
     
     def render_main_page(self):
         """メインページを描画"""
-        st.title("🏛️ 都道府県・市区町村選択ツール v4.0")
+        st.title("🏛️ 都道府県・市区町村選択ツール v33.0")
         
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             st.markdown("**GitHub ExcelファイルからデータをダウンロードしてWebアプリケーションを作成**")
         with col2:
-            st.metric("バージョン", "4.0")
+            st.metric("バージョン", "33.0")
         with col3:
-            st.metric("プラットフォーム", "Streamlit")
+            st.metric("プラットフォーム", "Streamlit + GIS")
         
         st.markdown("---")
         
@@ -478,7 +479,10 @@ class PrefectureCitySelectorWeb:
         with col2:
             if st.button("🗑️ データをクリア"):
                 st.session_state.prefecture_data = {}
+                st.session_state.prefecture_codes = {}
+                st.session_state.city_codes = {}
                 st.session_state.data_loaded = False
+                st.session_state.current_url = ""
                 st.session_state.selected_prefecture = ""
                 st.session_state.selected_city = ""
                 st.session_state.selected_file_path = ""
@@ -583,19 +587,19 @@ class PrefectureCitySelectorWeb:
                 # 大字・丁目選択セクション
                 if prefecture_code != "不明" and city_code != "不明":
                     st.markdown("---")
-                    st.header("🏘️ 詳細住所選択")
+                    st.header("🏘️ 詳細住所選択（GISファイル対応）")
                     
                     # フォルダパス入力
                     folder_path = st.text_input(
-                        "📁 ファイル検索フォルダパス:",
+                        "📁 GISファイル検索フォルダパス:",
                         value=st.session_state.folder_path,
-                        help="大字・丁目データが含まれるファイルがあるフォルダのパスを入力してください"
+                        help="大字・丁目データが含まれるGISファイル（ZIP、Shapefile、KML）があるフォルダのパスを入力してください"
                     )
                     
                     col1, col2 = st.columns([1, 2])
                     
                     with col1:
-                        if st.button("🔍 ファイルを検索"):
+                        if st.button("🔍 GISファイルを検索"):
                             if folder_path:
                                 st.session_state.folder_path = folder_path
                                 files, shapefile_sets = self.find_files_by_code(folder_path, prefecture_code, city_code)
@@ -603,24 +607,6 @@ class PrefectureCitySelectorWeb:
                                 if files or shapefile_sets:
                                     total_files = len(files) + len(shapefile_sets)
                                     st.success(f"✅ {total_files}個のファイル/セットが見つかりました")
-                                    
-                                    # ファイル選択オプションを作成
-                                    file_options = ["選択してください"]
-                                    file_mapping = {}
-                                    
-                                    # 個別ファイル
-                                    for f in files:
-                                        base_name = os.path.basename(f)
-                                        file_options.append(f"📄 {base_name}")
-                                        file_mapping[f"📄 {base_name}"] = f
-                                    
-                                    # Shapefileセット
-                                    for base_name, file_list in shapefile_sets.items():
-                                        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
-                                        file_options.append(set_name)
-                                        # Shapefileセットの場合は.shpファイルを代表として選択
-                                        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
-                                        file_mapping[set_name] = shp_file
                                     
                                     # ファイル選択
                                     selected_file_option = st.selectbox(
@@ -711,7 +697,7 @@ class PrefectureCitySelectorWeb:
                                 else:
                                     st.info("選択された大字に丁目データがありません")
                         else:
-                            st.info("まずファイルを検索・読み込みしてください")
+                            st.info("まずGISファイルを検索・読み込みしてください")
     
     def render_data_page(self):
         """データ管理ページを描画"""
@@ -729,6 +715,10 @@ class PrefectureCitySelectorWeb:
         if st.session_state.current_url:
             st.info(f"📡 データソース: {st.session_state.current_url}")
         
+        # GISファイル情報
+        if st.session_state.selected_file_path:
+            st.info(f"🗺️ 読み込み済みGISファイル: {os.path.basename(st.session_state.selected_file_path)}")
+        
         # データクリア機能のみ
         st.header("🗑️ データ管理")
         
@@ -741,6 +731,10 @@ class PrefectureCitySelectorWeb:
                 st.session_state.current_url = ""
                 st.session_state.selected_prefecture = ""
                 st.session_state.selected_city = ""
+                st.session_state.selected_file_path = ""
+                st.session_state.area_data = {}
+                st.session_state.selected_oaza = ""
+                st.session_state.selected_chome = ""
                 st.success("データをクリアしました")
                 st.experimental_rerun()
             else:
@@ -751,22 +745,26 @@ class PrefectureCitySelectorWeb:
         st.title("ℹ️ アプリケーション情報")
         
         st.markdown("""
-        ## 🏛️ 都道府県・市区町村選択ツール v4.0
+        ## 🏛️ 都道府県・市区町村選択ツール v33.0 (GIS対応版)
         
         ### 概要
         GitHubにアップロードされたExcelファイルから日本の都道府県・市区町村データを
-        読み込み、階層的な選択を可能にするWebアプリケーションです。
+        読み込み、さらにGISファイルから大字・丁目レベルまでの詳細な住所選択を可能にする
+        Webアプリケーションです。
         
         ### 主な機能
         ✅ **GitHub対応**: GitHub上のExcelファイルの直接読み込み  
         ✅ **階層選択**: 都道府県選択による市区町村の絞り込み  
+        ✅ **GIS対応**: ZIP、Shapefile、KMLファイルから大字・丁目を抽出  
+        ✅ **団体コード**: 都道府県コード・市区町村コードの表示  
+        ✅ **詳細住所**: 大字・丁目レベルまでの完全な住所選択  
         ✅ **リアルタイム**: 選択結果の即時表示  
         ✅ **レスポンシブ**: モバイル・デスクトップ対応  
-        ✅ **シンプル**: 必要最小限の機能に特化  
+        ✅ **シンプル**: 直感的で使いやすいインターフェース
         
         ### 必要なライブラリ
         ```bash
-        pip install streamlit pandas openpyxl requests
+        pip install streamlit pandas openpyxl requests geopandas fiona lxml
         ```
         
         ### 実行方法
@@ -780,26 +778,50 @@ class PrefectureCitySelectorWeb:
         3. ブラウザのアドレスバーからURLをコピー
         
         ### 対応ファイル形式
+        **基本データ:**
+        - Excel (.xlsx, .xls)
+        - CSV (.csv)
+        
+        **GISデータ:**
         - **ZIP**: 圧縮されたShapefileセット
         - **Shapefile**: .shp, .shx, .prj, .dbf, .cpg
         - **KML**: GoogleEarth形式のGISデータ
         
+        ### 団体コード体系
+        ```
+        団体コード（6桁）の構造:
+        472016 の場合:
+        ├─ 47:   都道府県コード（沖縄県）
+        ├─ 201:  市区町村コード（那覇市）
+        └─ 6:    チェックデジット
+        ```
+        
+        ### 使用手順
+        1. **基本選択**: GitHub URLを入力してデータを読み込み
+        2. **地域選択**: 都道府県・市区町村を選択
+        3. **詳細選択**: GISファイルから大字・丁目を選択
+        4. **結果取得**: 完全な住所情報と団体コードを取得
+        
         ### 注意事項
         - インターネット接続が必要です
+        - GIS機能にはGeoPandasが必要です
         - プライベートリポジトリの場合は適切なアクセス権限が必要です
-        - ファイルサイズが大きい場合は読み込みに時間がかかります
+        - 大きなGISファイルは読み込みに時間がかかる場合があります
         
         ### 更新履歴
+        - **v33.0**: GIS対応、Shapefile・KML・ZIP読み込み機能追加
+        - **v12.0**: 団体コード対応、沖縄県優先表示
         - **v4.0**: Streamlit対応、シンプル設計に特化
         - **v3.0**: GitHub対応、エラーハンドリング強化  
         - **v2.0**: GUI改善、保存機能追加  
-        - **v1.0**: 初期バージョン  
+        - **v1.0**: 初期バージョン
         
         ---
         
         **作成**: AI Assistant  
         **ライセンス**: MIT  
-        **プラットフォーム**: Streamlit Cloud対応
+        **プラットフォーム**: Streamlit Cloud対応  
+        **GIS対応**: GeoPandas + Fiona
         """)
         
         # システム情報
@@ -812,11 +834,29 @@ class PrefectureCitySelectorWeb:
             "Python バージョン": sys.version,
             "プラットフォーム": platform.platform(),
             "Streamlit バージョン": st.__version__,
+            "GeoPandas": "利用可能" if GEOPANDAS_AVAILABLE else "利用不可",
+            "XML処理": "利用可能" if XML_AVAILABLE else "利用不可",
             "現在時刻": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         
         for key, value in system_info.items():
             st.write(f"**{key}**: {value}")
+        
+        # 必要なライブラリの状態
+        st.header("📦 ライブラリ状態")
+        
+        libraries = [
+            ("streamlit", True),
+            ("pandas", True),
+            ("requests", True),
+            ("geopandas", GEOPANDAS_AVAILABLE),
+            ("fiona", GEOPANDAS_AVAILABLE),
+            ("lxml", XML_AVAILABLE)
+        ]
+        
+        for lib_name, available in libraries:
+            status = "✅ 利用可能" if available else "❌ 未インストール"
+            st.write(f"**{lib_name}**: {status}")
     
     def run(self):
         """アプリケーションを実行"""
@@ -844,20 +884,50 @@ class PrefectureCitySelectorWeb:
                 st.sidebar.write(f"選択中: {st.session_state.selected_prefecture}")
                 if st.session_state.selected_city:
                     st.sidebar.write(f"市区町村: {st.session_state.selected_city}")
+                    if st.session_state.selected_oaza:
+                        st.sidebar.write(f"大字: {st.session_state.selected_oaza}")
+                        if st.session_state.selected_chome:
+                            st.sidebar.write(f"丁目: {st.session_state.selected_chome}")
+        
+        # GISファイル情報
+        if st.session_state.selected_file_path:
+            st.sidebar.markdown("---")
+            st.sidebar.header("🗺️ GISデータ")
+            st.sidebar.write(f"ファイル: {os.path.basename(st.session_state.selected_file_path)}")
+            if st.session_state.area_data:
+                st.sidebar.write(f"大字数: {len(st.session_state.area_data)}")
         
         # フッター
         st.sidebar.markdown("---")
-        st.sidebar.markdown("**都道府県・市区町村選択ツール v4.0**")
-        st.sidebar.markdown("Powered by Streamlit")
+        st.sidebar.markdown("**都道府県・市区町村選択ツール v33.0**")
+        st.sidebar.markdown("Powered by Streamlit + GeoPandas")
 
 def main():
     """メイン関数"""
     try:
-        app = PrefectureCitySelectorWeb()
+        app = PrefectureCitySelectorGIS()
         app.run()
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
-    main()
+    main()選択オプションを作成
+                                    file_options = ["選択してください"]
+                                    file_mapping = {}
+                                    
+                                    # 個別ファイル
+                                    for f in files:
+                                        base_name = os.path.basename(f)
+                                        file_options.append(f"📄 {base_name}")
+                                        file_mapping[f"📄 {base_name}"] = f
+                                    
+                                    # Shapefileセット
+                                    for base_name, file_list in shapefile_sets.items():
+                                        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
+                                        file_options.append(set_name)
+                                        # Shapefileセットの場合は.shpファイルを代表として選択
+                                        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
+                                        file_mapping[set_name] = shp_file
+                                    
+                                    # ファイル
