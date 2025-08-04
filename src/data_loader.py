@@ -13,7 +13,7 @@ from datetime import datetime
 
 # 安全なインポート（フォールバック付き）
 try:
-    from config.config import GITHUB_CONFIG
+    from config.setting import GITHUB_CONFIG
 except ImportError:
     GITHUB_CONFIG = {
         "user_agent": "PrefectureCitySelector/33.0",
