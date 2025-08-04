@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 APP_CONFIG = {
     "title": "都道府県・市区町村選択ツール v33.0",
     "icon": "🏛️",
