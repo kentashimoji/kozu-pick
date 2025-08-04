@@ -1,5 +1,8 @@
-# 都道府県・市区町村選択ツール v4.0 - 必要ライブラリ
-# Prefecture City Selector v4.0 - Required Dependencies
+# 都道府県・市区町村選択ツール v4.0 (Streamlit版) - 必要ライブラリ
+# Prefecture City Selector v4.0 (Streamlit) - Required Dependencies
+
+# Webアプリケーションフレームワーク
+streamlit>=1.28.0
 
 # データ処理・分析
 pandas>=1.5.0
@@ -13,34 +16,44 @@ xlrd>=2.0.0
 requests>=2.28.0
 urllib3>=1.26.0
 
-# 日付・時刻処理（pandasに含まれているが明示的に記載）
+# データ可視化
+plotly>=5.15.0
+
+# 日付・時刻処理
 python-dateutil>=2.8.0
 
 # 文字エンコーディング処理
 chardet>=4.0.0
 
-# オプション: より高速なExcel処理
-# xlsxwriter>=3.0.0
+# オプション: より高度な可視化
+# matplotlib>=3.6.0
+# seaborn>=0.11.0
 
-# オプション: GUI拡張（より高度なUI要素）
-# pillow>=9.0.0
+# オプション: 高速なデータ処理
+# polars>=0.18.0
 
 # 開発・デバッグ用（オプション）
 # pytest>=7.0.0
 # pytest-cov>=4.0.0
-
-# パッケージング用（オプション）
-# pyinstaller>=5.0.0
+# streamlit-option-menu>=0.3.0
 
 # 注意:
-# - tkinter は Python 標準ライブラリのため requirements.txt には含めません
+# - tkinterは使用しません（Streamlitで代替）
 # - Python 3.8+ を推奨します
-# - Windows, macOS, Linux で動作確認済み
+# - Streamlit Cloud, Docker, ローカル環境で動作確認済み
 
 # インストール方法:
 # pip install -r requirements.txt
+
+# 実行方法:
+# streamlit run prefecture_city_selector_streamlit.py
 
 # 仮想環境での使用を推奨:
 # python -m venv venv
 # source venv/bin/activate  # Windows: venv\Scripts\activate
 # pip install -r requirements.txt
+# streamlit run prefecture_city_selector_streamlit.py
+
+# Streamlit Cloud デプロイメント用:
+# - このファイルをリポジトリのルートに配置
+# - Streamlit Cloudで自動認識されます
