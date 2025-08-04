@@ -38,11 +38,24 @@ st.set_page_config(
 
 def main():
     """メイン関数"""
+    if not IMPORTS_SUCCESS:
+        st.title("⚠️ アプリケーション初期化エラー")
+        st.error("必要なモジュールをインポートできませんでした。")
+        
+        # デバッグ情報
+        with st.expander("デバッグ情報を表示"):
+            st.write(f"**プロジェクトルート:** {project_root}")
+            st.write(f"**Pythonパス (最初の3つ):**")
+            for i, path in enumerate(sys.path[:3]):
+                st.write(f"  [{i}]: {path}")
+        
+        return
+    
     try:
         app = PrefectureCitySelector()
         app.run()
     except Exception as e:
-        st.error(f"アプリケーションエラー: {str(e)}")
+        st.error(f"アプリケーション実行エラー: {str(e)}")
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
