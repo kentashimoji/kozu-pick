@@ -14,14 +14,14 @@ sys.path.insert(0, str(project_root))
 
 import streamlit as st
 from src.data_loader import PrefectureCitySelector
-from config.settings import APP_CONFIG
+from config.config import APP_CONFIG
 
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # これで正常にインポート
     try:
-        from config.settings import APP_CONFIG
+        from config.config import APP_CONFIG
         from src.data_loader import PrefectureCitySelector
     except ImportError as e:
         st.error(f"インポートエラー: {e}")
