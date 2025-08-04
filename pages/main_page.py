@@ -44,7 +44,7 @@ class MainPage:
         """データソース設定セクション"""
         st.header("📡 データソース設定")
 
-        from config.settings import GITHUB_CONFIG
+        from config.config import GITHUB_CONFIG
         default_url = GITHUB_CONFIG["default_url"]
 
         url = st.text_input(
