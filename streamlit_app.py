@@ -4,6 +4,13 @@
 都道府県・市区町村選択ツール v33.0 (Streamlit Cloud対応版)
 メインアプリケーション
 """
+import sys
+from pathlib import Path
+
+# プロジェクトルート
+project_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(project_root))
+
 
 import streamlit as st
 from src.data_loader import PrefectureCitySelector
