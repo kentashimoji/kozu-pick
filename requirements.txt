@@ -1,5 +1,5 @@
-# 都道府県・市区町村選択ツール v12.0 (最小限構成) - 必要ライブラリ
-# Prefecture City Selector v12.0 (Minimal) - Required Dependencies
+# 都道府県・市区町村選択ツール v12.0 (GIS対応版) - 必要ライブラリ
+# Prefecture City Selector v12.0 (GIS Support) - Required Dependencies
 
 # Webアプリケーションフレームワーク
 streamlit>=1.28.0
@@ -13,14 +13,30 @@ openpyxl>=3.0.0
 # HTTP通信
 requests>=2.28.0
 
+# GIS データ処理（重要）
+geopandas>=0.13.0
+fiona>=1.8.0
+pyproj>=3.4.0
+shapely>=2.0.0
+
+# XML処理（KMLファイル用）
+lxml>=4.9.0
+
+# 地理空間データベースサポート（オプション）
+# gdal>=3.5.0
+
 # 注意:
-# - 必要最小限のライブラリのみを含めています
-# - データ可視化、統計分析、エクスポート機能は削除されました
+# - GIS機能を利用するためgeopandas等が必要です
+# - 対応ファイル形式: ZIP, Shapefile(.shp), KML および関連ファイル(.shx, .prj, .dbf, .cpg)
 # - Python 3.8+ を推奨します
-# - tkinterは使用しません（Streamlitで代替）
+# - GDALライブラリが必要な場合があります
 
 # インストール方法:
 # pip install -r requirements.txt
+
+# GIS環境での推奨インストール:
+# conda install -c conda-forge geopandas
+# pip install streamlit openpyxl requests
 
 # 実行方法:
 # streamlit run prefecture_city_selector_streamlit.py
@@ -34,4 +50,4 @@ requests>=2.28.0
 # Streamlit Cloud デプロイメント用:
 # - このファイルをリポジトリのルートに配置
 # - 自動認識されます
-# - デプロイ時間が大幅に短縮されます
+# - GIS機能のため若干時間がかかる場合があります
