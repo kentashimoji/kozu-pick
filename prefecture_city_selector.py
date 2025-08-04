@@ -912,7 +912,7 @@ def main():
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
-    main()"選択オプションを作成"
+    main()
                                     file_options = ["選択してください"]
                                     file_mapping = {}
                                     
