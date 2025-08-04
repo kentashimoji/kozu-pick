@@ -14,8 +14,8 @@ if str(project_root) not in sys.path:
 
 
 #from config.settings import APP_CONFIG
-from data_loader.py import PrefectureCitySelector
-
+from src.data_loader import PrefectureCitySelector
+                           
 
 APP_CONFIG = {
     "title": "都道府県・市区町村選択ツール v33.0", 
