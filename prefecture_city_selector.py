@@ -218,27 +218,60 @@ class PrefectureCitySelectorGIS:
             st.error(f"データの読み込みに失敗しました: {str(e)}")
             return False
     
-    def find_files_by_code(self, folder_path, prefecture_code, city_code):
-        """団体コードに基づいてGISファイルを検索"""
-        if not folder_path or not os.path.exists(folder_path):
-            return [], {}
-        
-        # 検索パターンを作成
-        search_code = f"{prefecture_code}{city_code}"
-        
-        # 対応するGISファイル拡張子
-        extensions = ['*.zip', '*.shp', '*.kml', '*.shx', '*.prj', '*.dbf', '*.cpg']
-        found_files = []
-        
-        for ext in extensions:
-            pattern = os.path.join(folder_path, f"*{search_code}*{ext}")
-            files = glob.glob(pattern, recursive=False)
-            found_files.extend(files)
-        
-        # Shapefileセットを優先的にグループ化
-        shapefile_sets = self.group_shapefile_sets(found_files)
-        
-        return sorted(list(set(found_files))), shapefile_sets
+    def find_files_by_code_from_github(self, base_url, prefecture_code, city_code):
+        """GitHubフォルダから団体コードに基づいてファイルを検索"""
+        try:
+            # GitHub APIを使用してフォルダ内のファイル一覧を取得
+            # raw.githubusercontent.com URLをAPI URLに変換
+            if "raw.githubusercontent.com" in base_url:
+                # URLを解析してAPI用に変換
+                # https://raw.githubusercontent.com/kentashimoji/kozu-pick/main/47okinawa
+                # -> https://api.github.com/repos/kentashimoji/kozu-pick/contents/47okinawa
+                parts = base_url.replace('https://raw.githubusercontent.com/', '').split('/')
+                username = parts[0]
+                repo = parts[1]
+                branch = parts[2]  # main
+                folder_path = '/'.join(parts[3:])  # 47okinawa
+                
+                api_url = f"https://api.GitHub.com/repos/{username}/{repo}/contents/{folder_path}"
+                
+                headers = {'User-Agent': 'PrefectureCitySelector/33.0'}
+                response = requests.get(api_url, headers=headers, timeout=30)
+                response.raise_for_status()
+                
+                files_data = response.json()
+                
+                # 検索パターンを作成
+                search_code = f"{prefecture_code}{city_code}"
+                
+                # 対応するファイル拡張子
+                extensions = ['.csv', '.xlsx', '.xls', '.txt', '.json']
+                found_files = []
+                
+                for file_info in files_data:
+                    if file_info['type'] == 'file':
+                        file_name = file_info['name']
+                        file_ext = os.path.splitext(file_name)[1].lower()
+                        
+                        # ファイル名に団体コードが含まれ、対応する拡張子かチェック
+                        if search_code in file_name and file_ext in extensions:
+                            found_files.append({
+                                'name': file_name,
+                                'download_url': file_info['download_url'],
+                                'size': file_info['size']
+                            })
+                
+                return found_files
+            else:
+                st.error("GitHub Raw URLの形式が正しくありません")
+                return []
+                
+        except requests.RequestException as e:
+            st.error(f"GitHub APIへのアクセスに失敗しました: {str(e)}")
+            return []
+        except Exception as e:
+            st.error(f"ファイル検索中にエラーが発生しました: {str(e)}")
+            return []
     
     def group_shapefile_sets(self, files):
         """Shapefileの関連ファイルをセットでグループ化"""
@@ -280,77 +313,90 @@ class PrefectureCitySelectorGIS:
             st.error(f"ZIPファイルの展開に失敗しました: {str(e)}")
             return []
     
-    def load_area_data(self, file_path):
-        """選択されたGISファイルから大字・丁目データを読み込み"""
+    def load_area_data_from_url(self, file_url, file_name):
+        """GitHubから直接ファイルをダウンロードして大字・丁目データを読み込み"""
         try:
-            if not GEOPANDAS_AVAILABLE:
-                st.error("GeoPandasがインストールされていません。GISファイルの読み込みにはGeoPandasが必要です。")
-                return False
-            
-            if not file_path or not os.path.exists(file_path):
-                st.error("ファイルが存在しません。")
-                return False
+            # ファイルをダウンロード
+            headers = {'User-Agent': 'PrefectureCitySelector/33.0'}
+            response = requests.get(file_url, headers=headers, timeout=30)
+            response.raise_for_status()
             
             # ファイル拡張子に基づいて読み込み方法を決定
-            file_ext = os.path.splitext(file_path)[1].lower()
-            gdf = None
-            temp_dir = None
+            file_ext = os.path.splitext(file_name)[1].lower()
+            df = None
             
-            try:
-                if file_ext == '.zip':
-                    # ZIPファイルの場合は展開してからShapefileを読み込み
-                    temp_dir = tempfile.mkdtemp()
-                    extracted_files = self.extract_zip_file(file_path, temp_dir)
-                    
-                    if not extracted_files:
-                        st.error("ZIPファイル内にGISファイルが見つかりませんでした")
-                        return False
-                    
-                    # 最初に見つかったGISファイルを使用
-                    gdf = gpd.read_file(extracted_files[0])
-                    
-                elif file_ext == '.shp':
-                    # Shapefileの読み込み
-                    gdf = gpd.read_file(file_path)
-                    
-                elif file_ext == '.kml':
-                    # KMLファイルの読み込み
-                    if XML_AVAILABLE:
-                        gdf = gpd.read_file(file_path, driver='KML')
-                    else:
-                        st.error("KMLファイルの読み込みにはlxmlライブラリが必要です")
-                        return False
+            if file_ext in ['.xlsx', '.xls']:
+                # Excelファイルの読み込み
+                excel_data = BytesIO(response.content)
+                df = pd.read_excel(excel_data)
                 
-                else:
-                    st.error(f"対応していないファイル形式です: {file_ext}")
+            elif file_ext == '.csv':
+                # CSVファイルの読み込み（複数エンコーディング対応）
+                content = response.content
+                encodings = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932']
+                
+                for encoding in encodings:
+                    try:
+                        df = pd.read_csv(BytesIO(content), encoding=encoding)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                
+                if df is None:
+                    st.error("CSVファイルの文字エンコーディングを読み取れませんでした")
                     return False
+                    
+            elif file_ext == '.txt':
+                # テキストファイルの読み込み（CSV形式として処理）
+                content = response.content
+                encodings = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932']
                 
-                if gdf is None or gdf.empty:
-                    st.error("ファイルからデータを読み込めませんでした")
+                for encoding in encodings:
+                    try:
+                        df = pd.read_csv(BytesIO(content), encoding=encoding, sep=None, engine='python')
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                
+                if df is None:
+                    st.error("テキストファイルの読み込みに失敗しました")
                     return False
+                    
+            elif file_ext == '.json':
+                # JSONファイルの読み込み
+                import json
+                json_data = json.loads(response.text)
+                df = pd.json_normalize(json_data)
                 
-                # 大字・丁目の列を検索
-                area_data = self.extract_area_from_gis(gdf)
-                
-                if not area_data:
-                    st.error("大字・丁目情報を抽出できませんでした")
-                    return False
-                
-                st.session_state.area_data = area_data
-                st.session_state.selected_file_path = file_path
-                
-                # ファイル情報を表示
-                st.info(f"📊 読み込み完了: {len(gdf)}件のデータ、{len(area_data)}個の大字を検出")
-                
-                return True
-                
-            finally:
-                # 一時ディレクトリをクリーンアップ
-                if temp_dir and os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                st.error(f"対応していないファイル形式です: {file_ext}")
+                return False
+            
+            if df is None or df.empty:
+                st.error("ファイルからデータを読み込めませんでした")
+                return False
+            
+            # 大字・丁目データを抽出
+            area_data = self.extract_area_from_dataframe(df)
+            
+            if not area_data:
+                st.error("大字・丁目情報を抽出できませんでした")
+                # デバッグ情報を表示
+                st.info(f"利用可能な列: {list(df.columns)}")
+                if len(df) > 0:
+                    st.info(f"データサンプル: {df.head(1).to_dict()}")
+                return False
+            
+            st.session_state.area_data = area_data
+            st.session_state.selected_file_path = file_name
+            
+            # ファイル情報を表示
+            st.info(f"📊 読み込み完了: {len(df)}件のデータ、{len(area_data)}個の大字を検出")
+            
+            return True
             
         except Exception as e:
-            st.error(f"GISファイルの読み込みに失敗しました: {str(e)}")
+            st.error(f"ファイルの読み込みに失敗しました: {str(e)}")
             return False
     
     def extract_area_from_gis(self, gdf):
@@ -912,21 +958,22 @@ def main():
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
-    main()
-    file_options = ["選択してください"]
-    file_mapping = {}
+    main()選択オプションを作成
+                                    file_options = ["選択してください"]
+                                    file_mapping = {}
                                     
-    # 個別ファイル
-    for f in files:
-        base_name = os.path.basename(f)
-        file_options.append(f"📄 {base_name}")
-        file_mapping[f"📄 {base_name}"] = f
+                                    # 個別ファイル
+                                    for f in files:
+                                        base_name = os.path.basename(f)
+                                        file_options.append(f"📄 {base_name}")
+                                        file_mapping[f"📄 {base_name}"] = f
                                     
-    # Shapefileセット
-    for base_name, file_list in shapefile_sets.items():
-        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
-        file_options.append(set_name)
-        # Shapefileセットの場合は.shpファイルを代表として選択
-        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
-        file_mapping[set_name] = shp_file
+                                    # Shapefileセット
+                                    for base_name, file_list in shapefile_sets.items():
+                                        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
+                                        file_options.append(set_name)
+                                        # Shapefileセットの場合は.shpファイルを代表として選択
+                                        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
+                                        file_mapping[set_name] = shp_file
                                     
+                                    # ファイル
