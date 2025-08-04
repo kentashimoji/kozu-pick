@@ -13,22 +13,8 @@ if str(project_root) not in sys.path:
 
 import streamlit as st
 
-# 安全なインポート
-try:
-    from config.settings import APP_CONFIG
-    from src.data_loader import PrefectureCitySelector
-    IMPORTS_SUCCESS = True
-except ImportError as e:
-    st.error(f"インポートエラー: {e}")
-    IMPORTS_SUCCESS = False
-    
-    # フォールバック設定
-    APP_CONFIG = {
-        "title": "都道府県・市区町村選択ツール + 小字抽出 v33.0",
-        "icon": "🏛️",
-        "layout": "wide",
-        "sidebar_state": "expanded"
-    }
+from config.settings import APP_CONFIG
+from src.data_loader import PrefectureCitySelector
 
 # ページ設定
 st.set_page_config(
