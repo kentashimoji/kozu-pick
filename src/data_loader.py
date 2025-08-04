@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 
 # プロジェクトルートをPythonパスに追加
+import sys
+from pathlib import Path
+
+
 project_root = Path(__file__).resolve().parent.parent  # 2階層上
 sys.path.insert(0, str(project_root))
 
 
-import sys
-from pathlib import Path
 import streamlit as st
 import pandas as pd
 import requests
