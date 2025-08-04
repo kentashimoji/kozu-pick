@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import sys
-from pathlib import Path
-
-# プロジェクトルート追加
-project_root = Path(__file__).resolve().parent.parent  # 2階層上
-sys.path.insert(0, str(project_root))
-
-
 APP_CONFIG = {
     "title": "都道府県・市区町村選択ツール v33.0",
     "icon": "🏛️",
