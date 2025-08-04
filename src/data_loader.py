@@ -11,15 +11,8 @@ import requests
 from io import BytesIO
 from datetime import datetime
 
-# 安全なインポート（フォールバック付き）
-try:
-    from config.settings import GITHUB_CONFIG
-except ImportError:
-    GITHUB_CONFIG = {
-        "user_agent": "PrefectureCitySelector/33.0",
-        "timeout": 30,
-        "default_url": "https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/000925835.xlsx"
-    }
+from config.settings import GITHUB_CONFIG
+
 
 try:
     from src.github_api import GitHubAPI
