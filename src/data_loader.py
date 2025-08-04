@@ -11,7 +11,7 @@ import requests
 from io import BytesIO
 from datetime import datetime
 
-#from config.settings import GITHUB_CONFIG
+from config.settings import GITHUB_CONFIG
 
 
 try:
