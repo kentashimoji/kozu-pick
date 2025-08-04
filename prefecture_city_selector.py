@@ -179,7 +179,7 @@ class PrefectureCitySelectorWeb:
         # データ読み込みセクション
         st.header("📡 データソース設定")
         
-        default_url = "https://github.com/kentashimoji/kozu-pick/blob/5b8313ff16443ae11714a4049356180a69ef373e/000925835.xlsx"
+        default_url = "git@github.com:kentashimoji/kozu-pick.git/000925835.xlsx"
         url = st.text_input(
             "GitHub ExcelファイルURL:",
             value=st.session_state.current_url or default_url,
