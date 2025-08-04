@@ -14,7 +14,7 @@ if str(project_root) not in sys.path:
 
 
 #from config.settings import APP_CONFIG
-from src import data_loader.PrefectureCitySelector
+from data_loader.py import PrefectureCitySelector
 
 
 APP_CONFIG = {
