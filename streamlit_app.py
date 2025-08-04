@@ -4,19 +4,25 @@
 都道府県・市区町村選択ツール v33.0 (Streamlit Cloud対応版)
 メインアプリケーション
 """
-
+import sys
+from pathlib import Path
 import streamlit as st
 from src.data_loader import PrefectureCitySelector
 from config.settings import APP_CONFIG
 
-# パス設定を確実に行う
+
+# プロジェクトルートをPythonパスに追加
+project_root = Path(__file__).resolve().parent.parent  # 2階層上
+sys.path.insert(0, str(project_root))
+
+# パス設定
 current_file = Path(__file__).resolve()
 project_root = current_file.parent
 
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# これで正常にインポートできるはず
+# これで正常にインポート
 try:
     from config.settings import APP_CONFIG
     from src.data_loader import PrefectureCitySelector
