@@ -47,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-class PrefectureCitySelectorGIS:
+    class PrefectureCitySelectorGitHub:
     def __init__(self):
         self.init_session_state()
     
@@ -96,7 +96,7 @@ class PrefectureCitySelectorGIS:
             status_text.text("データをダウンロードしています...")
             progress_bar.progress(25)
             
-            headers = {'User-Agent': 'PrefectureCitySelector/33.0'}
+            headers = {'User-Agent': 'PrefectureCitySelector/39.0'}
             response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             
@@ -399,24 +399,24 @@ class PrefectureCitySelectorGIS:
             st.error(f"ファイルの読み込みに失敗しました: {str(e)}")
             return False
     
-    def extract_area_from_gis(self, gdf):
-        """GISデータから大字・丁目を抽出"""
+    def extract_area_from_dataframe(self, df):
+        """データフレームから大字・丁目を抽出"""
         # 可能性のある列名パターン
-        oaza_patterns = ['大字', 'おおあざ', 'オオアザ', 'OAZA', 'oaza', '字', '町名', 'TOWN', 'town']
-        chome_patterns = ['丁目', 'ちょうめ', 'チョウメ', 'CHOME', 'chome', '丁', '番地']
+        oaza_patterns = ['大字', 'おおあざ', 'オオアザ', 'OAZA', 'oaza', '字', '町名', 'TOWN', 'town', '大字名']
+        chome_patterns = ['丁目', 'ちょうめ', 'チョウメ', 'CHOME', 'chome', '丁', '番地', '丁目名']
         address_patterns = ['住所', 'address', 'ADDRESS', '所在地', '地名', 'name', 'NAME']
         
         area_data = {}
         
         # 列名を取得
-        columns = [str(col).lower() for col in gdf.columns]
+        columns = [str(col).lower() for col in df.columns]
         
         # 大字・丁目の専用列を検索
         oaza_col = None
         chome_col = None
         address_col = None
         
-        for col in gdf.columns:
+        for col in df.columns:
             col_lower = str(col).lower()
             
             # 大字列の検索
@@ -434,7 +434,7 @@ class PrefectureCitySelectorGIS:
         # データ抽出
         if oaza_col:
             # 大字の専用列がある場合
-            for _, row in gdf.iterrows():
+            for _, row in df.iterrows():
                 oaza = str(row[oaza_col]) if pd.notna(row[oaza_col]) else ""
                 oaza = oaza.strip()
                 
@@ -450,7 +450,7 @@ class PrefectureCitySelectorGIS:
         
         elif address_col:
             # 住所列から抽出
-            for _, row in gdf.iterrows():
+            for _, row in df.iterrows():
                 address = str(row[address_col]) if pd.notna(row[address_col]) else ""
                 
                 # 正規表現で大字・丁目を抽出
@@ -468,9 +468,9 @@ class PrefectureCitySelectorGIS:
         
         else:
             # 全ての列から住所らしい情報を抽出
-            for col in gdf.columns:
-                if gdf[col].dtype == 'object':  # 文字列型の列のみ
-                    for _, row in gdf.iterrows():
+            for col in df.columns:
+                if df[col].dtype == 'object':  # 文字列型の列のみ
+                    for _, row in df.iterrows():
                         value = str(row[col]) if pd.notna(row[col]) else ""
                         
                         # 大字・丁目パターンを検索
@@ -493,17 +493,143 @@ class PrefectureCitySelectorGIS:
         
         return area_data
     
+    def get_files_from_github_folder(self, folder_url, file_extensions=None):
+        """GitHubフォルダからファイル一覧を取得"""
+        if file_extensions is None:
+            file_extensions = ['.zip', '.shp', '.shx', '.prj', '.dbf', '.cpg', '.kml']
+        
+        try:
+            # GitHub URLを解析
+            if 'raw.githubusercontent.com' in folder_url:
+                # raw URLをAPI URLに変換
+                parts = folder_url.replace('https://raw.githubusercontent.com/', '').split('/')
+                username = parts[0]
+                repo = parts[1]
+                branch = parts[2]
+                folder_path = '/'.join(parts[3:])
+            elif 'github.com' in folder_url:
+                # github.com URLをAPI URLに変換
+                parts = folder_url.replace('https://github.com/', '').split('/')
+                if len(parts) < 2:
+                    raise Exception("無効なGitHub URLです")
+                
+                username = parts[0]
+                repo = parts[1]
+                
+                if len(parts) > 3 and parts[2] == 'tree':
+                    branch = parts[3]
+                    folder_path = '/'.join(parts[4:]) if len(parts) > 4 else ''
+                else:
+                    branch = 'main'
+                    folder_path = '/'.join(parts[2:]) if len(parts) > 2 else ''
+            else:
+                raise Exception("GitHubのURLではありません")
+            
+            # GitHub API URL構築
+            api_url = f"https://api.github.com/repos/{username}/{repo}/contents/{folder_path}"
+            if branch != 'main':
+                api_url += f"?ref={branch}"
+            
+            headers = {'User-Agent': 'PrefectureCitySelector/39.0'}
+            response = requests.get(api_url, headers=headers, timeout=30)
+            
+            if response.status_code == 403:
+                st.warning("⚠️ GitHub APIのレート制限に達しました。代替方法でファイルを取得します...")
+                return self._get_github_files_alternative(username, repo, branch, folder_path, file_extensions)
+            
+            response.raise_for_status()
+            files_data = response.json()
+            
+            files = []
+            shapefile_sets = {}
+            
+            for item in files_data:
+                if item['type'] == 'file':
+                    file_name = item['name']
+                    file_ext = os.path.splitext(file_name)[1].lower()
+                    
+                    if any(file_name.lower().endswith(ext.lower()) for ext in file_extensions):
+                        file_info = {
+                            'name': file_name,
+                            'url': item['download_url'],
+                            'size': item.get('size', 0),
+                            'extension': file_ext,
+                            'description': f"GISファイル ({item.get('size', 0)} bytes)"
+                        }
+                        files.append(file_info)
+                        
+                        # Shapefileセットをグループ化
+                        if file_ext in ['.shp', '.shx', '.prj', '.dbf', '.cpg']:
+                            base_name = os.path.splitext(file_name)[0]
+                            if base_name not in shapefile_sets:
+                                shapefile_sets[base_name] = []
+                            shapefile_sets[base_name].append(file_info)
+            
+            return files, shapefile_sets
+            
+        except Exception as e:
+            st.error(f"GitHubフォルダからのファイル取得に失敗しました: {str(e)}")
+            return [], {}
+    
+    def _get_github_files_alternative(self, username, repo, branch, folder_path, file_extensions):
+        """GitHub APIが使えない場合の代替方法"""
+        try:
+            from bs4 import BeautifulSoup
+            
+            web_url = f"https://github.com/{username}/{repo}/tree/{branch}/{folder_path}"
+            response = requests.get(web_url, timeout=30)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            files = []
+            
+            # GitHubのファイルリンクを検索
+            file_links = soup.find_all('a', href=True)
+            
+            for link in file_links:
+                href = link.get('href', '')
+                link_text = link.get_text().strip()
+                
+                if '/blob/' in href and any(link_text.lower().endswith(ext.lower()) for ext in file_extensions):
+                    raw_url = href.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+                    if not raw_url.startswith('http'):
+                        raw_url = f"https://raw.githubusercontent.com{raw_url}"
+                    
+                    files.append({
+                        'name': link_text,
+                        'url': raw_url,
+                        'size': None,
+                        'description': f"GitHubファイル（代替取得）"
+                    })
+            
+            return files
+            
+        except Exception as e:
+            raise Exception(f"GitHub代替取得エラー: {str(e)}")
+    
+    def get_chome_options(self, area_data, selected_oaza):
+        """指定された大字名に対応する丁目の選択肢を取得"""
+        try:
+            if selected_oaza in area_data:
+                chome_list = area_data[selected_oaza]
+                if chome_list:
+                    return chome_list
+            return None
+        except Exception as e:
+            st.error(f"丁目名取得エラー: {str(e)}")
+            return None
+    
     def render_main_page(self):
         """メインページを描画"""
-        st.title("🏛️ 都道府県・市区町村選択ツール v33.0")
+        st.title("🏛️ 都道府県・市区町村選択ツール v39.0")
         
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             st.markdown("**GitHub ExcelファイルからデータをダウンロードしてWebアプリケーションを作成**")
         with col2:
-            st.metric("バージョン", "33.0")
+            st.metric("バージョン", "39.0")
         with col3:
-            st.metric("プラットフォーム", "Streamlit + GIS")
+            st.metric("プラットフォーム", "Streamlit + GitHub")
         
         st.markdown("---")
         
@@ -791,17 +917,17 @@ class PrefectureCitySelectorGIS:
         st.title("ℹ️ アプリケーション情報")
         
         st.markdown("""
-        ## 🏛️ 都道府県・市区町村選択ツール v33.0 (GIS対応版)
+        ## 🏛️ 都道府県・市区町村選択ツール v39.0 (GitHub連携版)
         
         ### 概要
         GitHubにアップロードされたExcelファイルから日本の都道府県・市区町村データを
-        読み込み、さらにGISファイルから大字・丁目レベルまでの詳細な住所選択を可能にする
-        Webアプリケーションです。
+        読み込み、さらにGitHubフォルダから自動的にファイルを検索して大字・丁目レベルまでの
+        詳細な住所選択を可能にするWebアプリケーションです。
         
         ### 主な機能
         ✅ **GitHub対応**: GitHub上のExcelファイルの直接読み込み  
         ✅ **階層選択**: 都道府県選択による市区町村の絞り込み  
-        ✅ **GIS対応**: ZIP、Shapefile、KMLファイルから大字・丁目を抽出  
+        ✅ **GitHub連携**: 団体コードによる住所ファイルの自動検索・読み込み  
         ✅ **団体コード**: 都道府県コード・市区町村コードの表示  
         ✅ **詳細住所**: 大字・丁目レベルまでの完全な住所選択  
         ✅ **リアルタイム**: 選択結果の即時表示  
@@ -828,10 +954,20 @@ class PrefectureCitySelectorGIS:
         - Excel (.xlsx, .xls)
         - CSV (.csv)
         
-        **GISデータ:**
+        **GitHub GISデータ:**
         - **ZIP**: 圧縮されたShapefileセット
         - **Shapefile**: .shp, .shx, .prj, .dbf, .cpg
         - **KML**: GoogleEarth形式のGISデータ
+        
+        ### GitHubフォルダ連携
+        ```
+        指定フォルダ: https://raw.githubusercontent.com/kentashimoji/kozu-pick/main/47okinawa
+        
+        検索パターン: [都道府県コード][市区町村コード]
+        例: 47201 (沖縄県那覇市)
+        
+        対応形式: ZIP, SHP, KML, およびShapefile関連ファイル
+        ```
         
         ### 団体コード体系
         ```
@@ -845,8 +981,16 @@ class PrefectureCitySelectorGIS:
         ### 使用手順
         1. **基本選択**: GitHub URLを入力してデータを読み込み
         2. **地域選択**: 都道府県・市区町村を選択
-        3. **詳細選択**: GISファイルから大字・丁目を選択
-        4. **結果取得**: 完全な住所情報と団体コードを取得
+        3. **GISファイル検索**: GitHubから団体コードでGISファイルを自動検索
+        4. **詳細選択**: 見つかったGISファイルから大字・丁目を選択
+        5. **結果取得**: 完全な住所情報と団体コードを取得
+        
+        ### 注意事項
+        - インターネット接続が必要です
+        - GIS機能にはGeoPandasが必要です
+        - プライベートリポジトリの場合は適切なアクセス権限が必要です
+        - 大きなGISファイルは読み込みに時間がかかる場合があります
+        - Shapefileは関連ファイル(.shx, .dbf等)が必要なため、ZIPファイルでの提供を推奨します
         
         ### 注意事項
         - インターネット接続が必要です
@@ -855,6 +999,7 @@ class PrefectureCitySelectorGIS:
         - 大きなGISファイルは読み込みに時間がかかる場合があります
         
         ### 更新履歴
+        - **v39.0**: GitHub連携強化、住所データ自動検索・読み込み機能追加
         - **v33.0**: GIS対応、Shapefile・KML・ZIP読み込み機能追加
         - **v12.0**: 団体コード対応、沖縄県優先表示
         - **v4.0**: Streamlit対応、シンプル設計に特化
@@ -867,7 +1012,7 @@ class PrefectureCitySelectorGIS:
         **作成**: AI Assistant  
         **ライセンス**: MIT  
         **プラットフォーム**: Streamlit Cloud対応  
-        **GIS対応**: GeoPandas + Fiona
+        **GitHub連携**: 自動ファイル検索・読み込み対応
         """)
         
         # システム情報
@@ -938,15 +1083,15 @@ class PrefectureCitySelectorGIS:
         # GISファイル情報
         if st.session_state.selected_file_path:
             st.sidebar.markdown("---")
-            st.sidebar.header("🗺️ GISデータ")
+            st.sidebar.header("📄 住所データ")
             st.sidebar.write(f"ファイル: {os.path.basename(st.session_state.selected_file_path)}")
             if st.session_state.area_data:
                 st.sidebar.write(f"大字数: {len(st.session_state.area_data)}")
         
         # フッター
         st.sidebar.markdown("---")
-        st.sidebar.markdown("**都道府県・市区町村選択ツール v33.0**")
-        st.sidebar.markdown("Powered by Streamlit + GeoPandas")
+        st.sidebar.markdown("**都道府県・市区町村選択ツール v39.0**")
+        st.sidebar.markdown("Powered by Streamlit + GitHub API")
 
 def main():
     """メイン関数"""
@@ -958,21 +1103,22 @@ def main():
         st.info("ページを再読み込みしてください。")
 
 if __name__ == "__main__":
-    main()
-    file_options = ["選択してください"]
-    file_mapping = {}
+    main()選択オプションを作成
+                                    file_options = ["選択してください"]
+                                    file_mapping = {}
                                     
-    # 個別ファイル
-    for f in files:
-        base_name = os.path.basename(f)
-        file_options.append(f"📄 {base_name}")
-        file_mapping[f"📄 {base_name}"] = f
+                                    # 個別ファイル
+                                    for f in files:
+                                        base_name = os.path.basename(f)
+                                        file_options.append(f"📄 {base_name}")
+                                        file_mapping[f"📄 {base_name}"] = f
                                     
-    # Shapefileセット
-    for base_name, file_list in shapefile_sets.items():
-        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
-        file_options.append(set_name)
-        # Shapefileセットの場合は.shpファイルを代表として選択
-        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
-        file_mapping[set_name] = shp_file
+                                    # Shapefileセット
+                                    for base_name, file_list in shapefile_sets.items():
+                                        set_name = f"🗺️ {os.path.basename(base_name)}.shp (セット)"
+                                        file_options.append(set_name)
+                                        # Shapefileセットの場合は.shpファイルを代表として選択
+                                        shp_file = next((f for f in file_list if f.endswith('.shp')), file_list[0])
+                                        file_mapping[set_name] = shp_file
                                     
+                                    # ファイル
