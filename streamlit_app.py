@@ -13,8 +13,18 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 
-from config.settings import APP_CONFIG
+#from config.settings import APP_CONFIG
 from src.data_loader import PrefectureCitySelector
+
+
+APP_CONFIG = {
+    "title": "都道府県・市区町村選択ツール v33.0", 
+    "icon": "🏛️",
+    "layout": "wide",
+    "sidebar_state": "expanded",
+    "version": "33.0"
+}
+
 
 # ページ設定
 st.set_page_config(
