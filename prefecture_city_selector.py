@@ -47,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-    class PrefectureCitySelectorGitHub:
+class PrefectureCitySelectorGitHub:
     def __init__(self):
         self.init_session_state()
     
