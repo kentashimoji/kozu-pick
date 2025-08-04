@@ -15,7 +15,7 @@ import os
 import zipfile
 import tempfile
 import streamlit as st
-from config.settings import GIS_CONFIG
+from config.config import GIS_CONFIG
 
 
 try:
