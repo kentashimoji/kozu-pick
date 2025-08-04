@@ -19,12 +19,12 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # これで正常にインポート
-try:
-    from config.settings import APP_CONFIG
-    from src.data_loader import PrefectureCitySelector
-except ImportError as e:
-    st.error(f"インポートエラー: {e}")
-    st.stop()
+    try:
+        from config.settings import APP_CONFIG
+        from src.data_loader import PrefectureCitySelector
+    except ImportError as e:
+        st.error(f"インポートエラー: {e}")
+        st.stop()
 
 
 # ページ設定
