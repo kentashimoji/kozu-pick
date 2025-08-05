@@ -12,18 +12,11 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+import streamlit as st
 
-#from config.settings import APP_CONFIG
+#from src.sample_a import sample
+from config.settings import APP_CONFIG
 from src.data_loader import PrefectureCitySelector
-                           
-
-APP_CONFIG = {
-    "title": "都道府県・市区町村選択ツール v33.0", 
-    "icon": "🏛️",
-    "layout": "wide",
-    "sidebar_state": "expanded",
-    "version": "33.0"
-}
 
 
 # ページ設定
@@ -35,26 +28,8 @@ st.set_page_config(
 )
 
 def main():
-    """メインアプリケーション"""
-    if not IMPORTS_SUCCESS:
-        st.title("⚠️ アプリケーション初期化エラー")
-        st.error("必要なモジュールをインポートできませんでした。")
-        
-        # デバッグ情報
-        with st.expander("デバッグ情報を表示"):
-            st.write(f"**プロジェクトルート:** {project_root}")
-            st.write(f"**Pythonパス (最初の3つ):**")
-            for i, path in enumerate(sys.path[:3]):
-                st.write(f"  [{i}]: {path}")
-        
-        return
-    
-    try:
-        app = PrefectureCitySelector()
-        app.run()
-    except Exception as e:
-        st.error(f"アプリケーション実行エラー: {str(e)}")
-        st.info("ページを再読み込みしてください。")
+	app = PrefectureCitySelector()
+	app.run()
 
 if __name__ == "__main__":
-    main()
+	main()
