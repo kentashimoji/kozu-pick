@@ -12,74 +12,12 @@ from io import BytesIO
 from datetime import datetime
 
 from config.settings import GITHUB_CONFIG
-
-
-try:
-    from src.github_api import GitHubAPI
-except ImportError:
-    class GitHubAPI:
-        def __init__(self):
-            self.headers = {'User-Agent': 'PrefectureCitySelector/33.0'}
-            self.timeout = 30
-        
-        def download_file(self, url):
-            try:
-                response = requests.get(url, headers=self.headers, timeout=self.timeout)
-                response.raise_for_status()
-                return response
-            except requests.RequestException as e:
-                st.error(f"ネットワークエラー: {str(e)}")
-                return None
-
-try:
-    from src.gis_handler import GISHandler
-except ImportError:
-    class GISHandler:
-        def __init__(self):
-            pass
-        
-        def is_gis_available(self):
-            return False
-
-try:
-    from src.utils import SessionStateManager
-except ImportError:
-    class SessionStateManager:
-        def init_session_state(self):
-            session_keys = [
-                'prefecture_data', 'prefecture_codes', 'city_codes', 'data_loaded',
-                'current_url', 'selected_prefecture', 'selected_city',
-                'selected_file_path', 'area_data', 'selected_oaza', 'selected_chome',
-                'folder_path'
-            ]
-            
-            for key in session_keys:
-                if key not in st.session_state:
-                    if key in ['prefecture_data', 'prefecture_codes', 'city_codes', 'area_data']:
-                        st.session_state[key] = {}
-                    elif key == 'data_loaded':
-                        st.session_state[key] = False
-                    else:
-                        st.session_state[key] = ""
-
-# ページクラスも同様にフォールバック
-try:
-    from pages.main_page import MainPage
-except ImportError:
-    # MainPageクラスを直接定義（上記のコードを使用）
-    pass
-
-try:
-    from pages.data_management import DataManagementPage
-except ImportError:
-    # DataManagementPageクラスを直接定義
-    pass
-
-try:
-    from pages.about_page import AboutPage  
-except ImportError:
-    # AboutPageクラスを直接定義
-    pass
+from src.github_api import GitHubAPI
+from src.gis_handler import GISHandler
+from src.utils import SessionStateManager
+from pages.main_page import MainPage
+from pages.data_management import DataManagementPage
+from pages.about_page import AboutPage  
 
 class PrefectureCitySelector:
     def __init__(self):
