@@ -14,7 +14,7 @@ GITHUB_CONFIG = {
 
 GIS_CONFIG = {
     "supported_extensions": ['.zip', '.shp', '.shx', '.prj', '.dbf', '.cpg', '.kml'],
-    "shapefile_required": ['.shp', '.shx', '.dbf']
+    "shapefile_required": ['.shp', '.shx', '.dbf'],
     "default_search_range": 100,  # デフォルト検索範囲（メートル）
     "max_search_range": 1000,     # 最大検索範囲（メートル）
     "min_search_range": 10        # 最小検索範囲（メートル）
