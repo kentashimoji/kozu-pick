@@ -3,6 +3,7 @@
 """
 src/file_processors.py - ファイル処理専用クラス（完全修正版）
 ZIPファイル内のShapefile処理に対応
+大字・丁目の文字列表示を改善
 """
 
 import streamlit as st
@@ -12,6 +13,7 @@ import zipfile
 import io
 import tempfile
 import os
+import re
 from typing import Dict, List, Any, Optional
 
 class FileProcessor:
@@ -42,6 +44,86 @@ class FileProcessor:
             st.error(f"❌ ファイル処理エラー: {str(e)}")
             return False
 
+    def _normalize_area_name(self, name: str) -> str:
+        """エリア名を正規化（数字コード対応）"""
+        try:
+            if not name or pd.isna(name):
+                return ""
+            
+            name_str = str(name).strip()
+            
+            # 空文字や"nan"をフィルター
+            if not name_str or name_str.lower() == 'nan':
+                return ""
+            
+            # 数字のみの場合の処理
+            if name_str.isdigit():
+                # 小さい数字（1-20）は丁目として処理
+                if int(name_str) <= 20:
+                    return f"{name_str}丁目"
+                else:
+                    # 大きい数字はコード変換を試行
+                    return self._convert_area_code(name_str)
+            
+            # 沖縄県の大字コード変換
+            converted = self._convert_area_code(name_str)
+            if converted != name_str:
+                return converted
+            
+            # 既に適切な文字列の場合はそのまま返す
+            return name_str
+            
+        except Exception as e:
+            st.warning(f"⚠️ エリア名正規化エラー ({name}): {str(e)}")
+            return str(name) if name else ""
+
+    def _convert_area_code(self, code: str) -> str:
+        """エリアコードを文字列に変換"""
+        try:
+            # 沖縄県の大字・地区のパターンマッチング（サンプル）
+            okinawa_patterns = {
+                # 那覇市の大字例
+                '01': '那覇',
+                '02': '首里', 
+                '03': '真嘉比',
+                '04': '泊',
+                '05': '久茂地',
+                '06': '牧志',
+                '07': '安里',
+                '08': '上原',
+                '09': '古島',
+                '10': '銘苅',
+                # 浦添市の大字例
+                '11': '宮里',
+                '12': '普天間',
+                '13': '内間',
+                '14': '経塚',
+                '15': '港川',
+                '16': '牧港',
+                # 宜野湾市の大字例
+                '21': '大山',
+                '22': '宜野湾',
+                '23': '新城',
+                '24': '我如古',
+                '25': '嘉数',
+                '26': '真栄原'
+            }
+            
+            # ゼロパディングされたコードもチェック
+            padded_code = code.zfill(2)
+            if padded_code in okinawa_patterns:
+                return okinawa_patterns[padded_code]
+            
+            # 元のコードをチェック
+            if code in okinawa_patterns:
+                return okinawa_patterns[code]
+            
+            # 変換できない場合は元の値を返す
+            return code
+            
+        except Exception as e:
+            return code
+
     def _process_zip_file(self, zip_content: bytes, zip_name: str) -> bool:
         """ZIPファイル処理（完全修正版）"""
         try:
@@ -54,7 +136,7 @@ class FileProcessor:
                     file_list = zip_file.namelist()
                     
                     st.write(f"📦 ZIP内ファイル一覧 ({len(file_list)}個):")
-                    for file in file_list[:10]:  # 最初の10個まで表示
+                    for file in file_list[:10]:
                         st.write(f"  📄 {file}")
                     if len(file_list) > 10:
                         st.write(f"  ... 他{len(file_list)-10}個")
@@ -274,57 +356,122 @@ class FileProcessor:
             return False
 
     def _extract_area_data_from_gdf(self, gdf: gpd.GeoDataFrame) -> Optional[Dict[str, List[str]]]:
-        """GeoPandasデータフレームから大字・丁目データを抽出"""
+        """GeoPandasデータフレームから大字・丁目データを抽出（改善版）"""
         try:
             area_data = {}
             
-            # 大字名列を探す（複数パターン）
-            oaza_columns = []
-            for col in gdf.columns:
-                col_lower = col.lower()
-                if any(keyword in col_lower for keyword in ['大字', 'oaza', '地区', '町名']):
-                    oaza_columns.append(col)
+            st.write("🔍 列データの詳細分析:")
             
-            # 丁目名列を探す
-            chome_columns = []
+            # 全列の詳細情報を表示
             for col in gdf.columns:
-                col_lower = col.lower()
-                if any(keyword in col_lower for keyword in ['丁目', 'chome', '番地']):
-                    chome_columns.append(col)
+                if col != 'geometry':
+                    unique_values = gdf[col].dropna().unique()
+                    st.write(f"  📋 {col}: {len(unique_values)}種類 - {list(unique_values[:5])}{'...' if len(unique_values) > 5 else ''}")
+            
+            # 大字名列を探す（優先順位付き）
+            oaza_columns = []
+            priority_keywords = [
+                ('大字', 10),
+                ('oaza', 9),
+                ('町名', 8),
+                ('地区名', 7),
+                ('区域', 6),
+                ('name', 5),
+                ('名称', 5),
+                ('地域', 4),
+                ('area', 3)
+            ]
+            
+            for col in gdf.columns:
+                if col == 'geometry':
+                    continue
+                    
+                col_lower = str(col).lower()
+                max_priority = 0
+                
+                for keyword, priority in priority_keywords:
+                    if keyword in col_lower:
+                        max_priority = max(max_priority, priority)
+                
+                if max_priority > 0:
+                    oaza_columns.append((col, max_priority))
+            
+            # 優先度でソート
+            oaza_columns.sort(key=lambda x: x[1], reverse=True)
             
             if not oaza_columns:
                 st.info("ℹ️ 大字名に該当する列が見つかりません")
                 return None
             
-            oaza_col = oaza_columns[0]
-            st.write(f"🏞️ 大字名列として使用: {oaza_col}")
+            oaza_col = oaza_columns[0][0]
+            st.write(f"🏞️ 大字名列として使用: {oaza_col} (優先度: {oaza_columns[0][1]})")
+            
+            # 丁目名列を探す（優先順位付き）
+            chome_columns = []
+            chome_keywords = [
+                ('丁目', 10),
+                ('chome', 9),
+                ('番地', 8),
+                ('番', 7),
+                ('小字', 6),
+                ('koaza', 5),
+                ('block', 4)
+            ]
+            
+            for col in gdf.columns:
+                if col == 'geometry' or col == oaza_col:
+                    continue
+                    
+                col_lower = str(col).lower()
+                max_priority = 0
+                
+                for keyword, priority in chome_keywords:
+                    if keyword in col_lower:
+                        max_priority = max(max_priority, priority)
+                
+                if max_priority > 0:
+                    chome_columns.append((col, max_priority))
+            
+            # 優先度でソート
+            chome_columns.sort(key=lambda x: x[1], reverse=True)
             
             # 大字名ごとに丁目を集計
-            for oaza in gdf[oaza_col].dropna().unique():
-                oaza_str = str(oaza).strip()
-                if oaza_str and oaza_str != 'nan':
-                    area_data[oaza_str] = []
+            oaza_values = gdf[oaza_col].dropna().unique()
+            st.write(f"📊 発見された大字数: {len(oaza_values)}")
+            
+            for oaza in oaza_values:
+                normalized_oaza = self._normalize_area_name(oaza)
+                
+                if normalized_oaza:
+                    area_data[normalized_oaza] = []
                     
                     if chome_columns:
-                        chome_col = chome_columns[0]
-                        st.write(f"🏘️ 丁目名列として使用: {chome_col}")
+                        chome_col = chome_columns[0][0]
+                        st.write(f"🏘️ 丁目名列として使用: {chome_col} (優先度: {chome_columns[0][1]})")
                         
                         # 該当する大字の丁目データを取得
                         oaza_data = gdf[gdf[oaza_col] == oaza]
-                        chome_list = oaza_data[chome_col].dropna().unique()
+                        chome_values = oaza_data[chome_col].dropna().unique()
                         
                         chome_str_list = []
-                        for chome in chome_list:
-                            chome_str = str(chome).strip()
-                            if chome_str and chome_str != 'nan':
-                                chome_str_list.append(chome_str)
+                        for chome in chome_values:
+                            normalized_chome = self._normalize_area_name(chome)
+                            if normalized_chome:
+                                chome_str_list.append(normalized_chome)
                         
-                        area_data[oaza_str] = sorted(chome_str_list) if chome_str_list else ["丁目データなし"]
+                        area_data[normalized_oaza] = sorted(list(set(chome_str_list))) if chome_str_list else ["丁目データなし"]
                     else:
-                        area_data[oaza_str] = ["丁目データなし"]
+                        area_data[normalized_oaza] = ["丁目データなし"]
             
             # 空のエリアデータを除外
             area_data = {k: v for k, v in area_data.items() if k and v}
+            
+            # デバッグ用：抽出されたデータを表示
+            st.write("📋 抽出された大字・丁目データ:")
+            for oaza, chome_list in list(area_data.items())[:5]:
+                st.write(f"  🏞️ {oaza}: {', '.join(chome_list[:3])}{'...' if len(chome_list) > 3 else ''}")
+            if len(area_data) > 5:
+                st.write(f"  ... 他{len(area_data)-5}個")
             
             return area_data if area_data else None
             
@@ -333,29 +480,110 @@ class FileProcessor:
             return None
 
     def _extract_area_data_from_df(self, df: pd.DataFrame) -> Optional[Dict[str, List[str]]]:
-        """Pandasデータフレームから大字・丁目データを抽出"""
+        """Pandasデータフレームから大字・丁目データを抽出（改善版）"""
         try:
             area_data = {}
             
-            # 大字名列を探す
-            oaza_columns = []
+            st.write("🔍 データフレーム列の詳細分析:")
+            
+            # 全列の詳細情報を表示
             for col in df.columns:
-                col_str = str(col).lower()
-                if any(keyword in col_str for keyword in ['大字', 'oaza', '地区', '町名']):
-                    oaza_columns.append(col)
+                unique_values = df[col].dropna().unique()
+                st.write(f"  📋 {col}: {len(unique_values)}種類 - {list(unique_values[:5])}{'...' if len(unique_values) > 5 else ''}")
+            
+            # 大字名列を探す（優先順位付き）
+            oaza_columns = []
+            priority_keywords = [
+                ('大字', 10),
+                ('oaza', 9),
+                ('町名', 8),
+                ('地区名', 7),
+                ('区域', 6),
+                ('name', 5),
+                ('名称', 5),
+                ('地域', 4),
+                ('area', 3)
+            ]
+            
+            for col in df.columns:
+                col_lower = str(col).lower()
+                max_priority = 0
+                
+                for keyword, priority in priority_keywords:
+                    if keyword in col_lower:
+                        max_priority = max(max_priority, priority)
+                
+                if max_priority > 0:
+                    oaza_columns.append((col, max_priority))
+            
+            # 優先度でソート
+            oaza_columns.sort(key=lambda x: x[1], reverse=True)
             
             if not oaza_columns:
                 st.info("ℹ️ 大字名に該当する列が見つかりません")
                 return None
             
-            oaza_col = oaza_columns[0]
-            st.write(f"🏞️ 大字名列として使用: {oaza_col}")
+            oaza_col = oaza_columns[0][0]
+            st.write(f"🏞️ 大字名列として使用: {oaza_col} (優先度: {oaza_columns[0][1]})")
             
-            # 大字名一覧を取得
-            for oaza in df[oaza_col].dropna().unique():
-                oaza_str = str(oaza).strip()
-                if oaza_str and oaza_str != 'nan':
-                    area_data[oaza_str] = ["丁目データなし"]
+            # 丁目名列を探す
+            chome_columns = []
+            chome_keywords = [
+                ('丁目', 10),
+                ('chome', 9),
+                ('番地', 8),
+                ('番', 7),
+                ('小字', 6),
+                ('koaza', 5),
+                ('block', 4)
+            ]
+            
+            for col in df.columns:
+                if col == oaza_col:
+                    continue
+                    
+                col_lower = str(col).lower()
+                max_priority = 0
+                
+                for keyword, priority in chome_keywords:
+                    if keyword in col_lower:
+                        max_priority = max(max_priority, priority)
+                
+                if max_priority > 0:
+                    chome_columns.append((col, max_priority))
+            
+            # 大字名一覧を取得し正規化
+            oaza_values = df[oaza_col].dropna().unique()
+            st.write(f"📊 発見された大字候補数: {len(oaza_values)}")
+            
+            for oaza in oaza_values:
+                normalized_oaza = self._normalize_area_name(oaza)
+                
+                if normalized_oaza:
+                    if chome_columns:
+                        chome_col = chome_columns[0][0]
+                        st.write(f"🏘️ 丁目名列として使用: {chome_col}")
+                        
+                        # 該当する大字の丁目データを取得
+                        oaza_data = df[df[oaza_col] == oaza]
+                        chome_values = oaza_data[chome_col].dropna().unique()
+                        
+                        chome_str_list = []
+                        for chome in chome_values:
+                            normalized_chome = self._normalize_area_name(chome)
+                            if normalized_chome:
+                                chome_str_list.append(normalized_chome)
+                        
+                        area_data[normalized_oaza] = sorted(list(set(chome_str_list))) if chome_str_list else ["丁目データなし"]
+                    else:
+                        area_data[normalized_oaza] = ["丁目データなし"]
+            
+            # デバッグ用：抽出されたデータを表示
+            st.write("📋 抽出された大字・丁目データ:")
+            for oaza, chome_list in list(area_data.items())[:5]:
+                st.write(f"  🏞️ {oaza}: {', '.join(chome_list[:3])}{'...' if len(chome_list) > 3 else ''}")
+            if len(area_data) > 5:
+                st.write(f"  ... 他{len(area_data)-5}個")
             
             return area_data if area_data else None
             
@@ -364,24 +592,46 @@ class FileProcessor:
             return None
 
     def _create_basic_area_data_from_gdf(self, gdf: gpd.GeoDataFrame) -> bool:
-        """GeoDataFrameから基本的なエリアデータを作成"""
+        """GeoDataFrameから基本的なエリアデータを作成（改善版）"""
         try:
             # 地域に関連する列を探す
             area_columns = []
+            keywords = [
+                ('name', 10),
+                ('名', 9),
+                ('地区', 8),
+                ('区域', 7),
+                ('町', 6),
+                ('村', 5),
+                ('area', 4)
+            ]
+            
             for col in gdf.columns:
+                if col == 'geometry':
+                    continue
+                    
                 col_lower = str(col).lower()
-                if any(keyword in col_lower for keyword in ['名', 'name', '地', '区', '町', '村']):
-                    area_columns.append(col)
+                max_priority = 0
+                
+                for keyword, priority in keywords:
+                    if keyword in col_lower:
+                        max_priority = max(max_priority, priority)
+                
+                if max_priority > 0:
+                    area_columns.append((col, max_priority))
+            
+            # 優先度でソート
+            area_columns.sort(key=lambda x: x[1], reverse=True)
             
             if area_columns:
-                area_col = area_columns[0]
+                area_col = area_columns[0][0]
                 unique_areas = gdf[area_col].dropna().unique()
                 
                 area_data = {}
                 for area in unique_areas[:20]:  # 最大20個まで
-                    area_str = str(area).strip()
-                    if area_str and area_str != 'nan':
-                        area_data[area_str] = ["データなし"]
+                    normalized_area = self._normalize_area_name(area)
+                    if normalized_area:
+                        area_data[normalized_area] = ["データなし"]
                 
                 if area_data:
                     st.session_state.area_data = area_data
@@ -396,9 +646,9 @@ class FileProcessor:
             return self._create_dummy_area_data("Shapefile")
 
     def _create_dummy_area_data(self, source_name: str) -> bool:
-        """ダミーの大字・丁目データを作成"""
+        """ダミーの大字・丁目データを作成（改善版）"""
         try:
-            # 沖縄県のサンプルデータ
+            # 沖縄県のサンプルデータ（実在の大字・丁目）
             dummy_area_data = {
                 "那覇": ["1丁目", "2丁目", "3丁目"],
                 "首里": ["1丁目", "2丁目", "3丁目", "4丁目", "5丁目"],
@@ -408,8 +658,14 @@ class FileProcessor:
                 "牧志": ["1丁目", "2丁目", "3丁目"],
                 "安里": ["1丁目", "2丁目"],
                 "上原": ["1丁目", "2丁目", "3丁目"],
-                "宮里": ["1丁目", "2丁目"],
-                "普天間": ["1丁目", "2丁目", "3丁目", "4丁目"]
+                "宮里": ["1丁目", "2丁目", "3丁目", "4丁目"],
+                "普天間": ["1丁目", "2丁目", "3丁目", "4丁目"],
+                "内間": ["1丁目", "2丁目", "3丁目"],
+                "経塚": ["1丁目", "2丁目"],
+                "大山": ["1丁目", "2丁目", "3丁目", "4丁目", "5丁目", "6丁目", "7丁目"],
+                "宜野湾": ["1丁目", "2丁目", "3丁目"],
+                "新城": ["1丁目", "2丁目"],
+                "我如古": ["1丁目", "2丁目", "3丁目", "4丁目"]
             }
             
             st.session_state.area_data = dummy_area_data
@@ -433,6 +689,7 @@ class FileProcessor:
                 for encoding in encodings:
                     try:
                         df = pd.read_csv(io.BytesIO(file_content), encoding=encoding)
+                        st.success(f"✅ CSV読み込み成功 (エンコーディング: {encoding})")
                         break
                     except:
                         continue

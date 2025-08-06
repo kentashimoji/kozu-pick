@@ -16,16 +16,17 @@ import streamlit as st
 
 #from src.sample_a import sample
 from config.settings import APP_CONFIG
-from src.data_loader import PrefectureCitySelector
 
-
-# ページ設定
 st.set_page_config(
     page_title=APP_CONFIG["title"],
     page_icon=APP_CONFIG["icon"],
     layout=APP_CONFIG["layout"],
     initial_sidebar_state=APP_CONFIG["sidebar_state"]
 )
+
+
+from src.data_loader import PrefectureCitySelector
+
 
 def main():
 	app = PrefectureCitySelector()
